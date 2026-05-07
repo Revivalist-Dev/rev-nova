@@ -14,18 +14,11 @@ import type NovaPlugin from '../../../../main';
 interface IndicatorOpportunity {
     line: number;
     column: number;
-    type: 'enhancement' | 'quickfix' | 'metrics' | 'transform';
+    type: 'enhancement' | 'metrics' | 'transform';
     icon: string;
     commands: MarkdownCommand[];
     confidence: number;
-    specificIssues?: Array<{
-        matchedText: string;
-        startIndex: number;
-        endIndex: number;
-        description: string;
-        suggestedFix?: string;
-    }>;
-    issueCount?: number;
+    fillInstruction?: string;
 }
 
 export interface WritingHighlight {
@@ -70,12 +63,6 @@ class IndicatorWidget extends WidgetType {
         // Add tooltip/title attribute
         indicator.setAttribute('title', this.getTooltipText());
 
-        // Add issue count if present
-        if (this.opportunity.issueCount && this.opportunity.issueCount > 1) {
-            indicator.setAttribute('data-count', this.opportunity.issueCount.toString());
-            indicator.textContent = this.opportunity.icon + this.opportunity.issueCount;
-        }
-
         // Use Obsidian's registerDomEvent for proper cleanup
         this.plugin.registerDomEvent(indicator, 'click', (event: MouseEvent) => {
             event.preventDefault();
@@ -111,9 +98,6 @@ class IndicatorWidget extends WidgetType {
         if (this.opportunity.icon === '📝') {
             return 'Click to Smart fill this placeholder with AI';
         }
-        if (this.opportunity.icon === '⚡') {
-            return 'Click to fix writing quality issues';
-        }
         if (this.opportunity.icon === '✨') {
             return 'Click for transformation suggestions';
         }
@@ -125,12 +109,8 @@ class IndicatorWidget extends WidgetType {
      */
     updateDOM(dom: HTMLElement): boolean {
         // Update the element if needed
-        const newText = this.opportunity.issueCount && this.opportunity.issueCount > 1
-            ? this.opportunity.icon + this.opportunity.issueCount
-            : this.opportunity.icon;
-        
-        if (dom.textContent !== newText) {
-            dom.textContent = newText;
+        if (dom.textContent !== this.opportunity.icon) {
+            dom.textContent = this.opportunity.icon;
         }
         
         return true;
@@ -142,8 +122,7 @@ class IndicatorWidget extends WidgetType {
     eq(other: IndicatorWidget): boolean {
         return this.opportunity.line === other.opportunity.line &&
                this.opportunity.type === other.opportunity.type &&
-               this.opportunity.confidence === other.opportunity.confidence &&
-               this.opportunity.issueCount === other.opportunity.issueCount;
+               this.opportunity.confidence === other.opportunity.confidence;
     }
 
     /**
@@ -311,10 +290,6 @@ export function createIndicatorExtension(plugin: NovaPlugin) {
             
             '.nova-margin-indicator[data-type="enhancement"]': {
                 color: 'var(--text-accent)'
-            },
-            
-            '.nova-margin-indicator[data-type="quickfix"]': {
-                color: 'var(--text-warning)'
             },
             
             '.nova-margin-indicator[data-type="metrics"]': {

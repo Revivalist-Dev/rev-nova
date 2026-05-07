@@ -79,19 +79,19 @@ describe('InsightPanel', () => {
             // Access private method for testing business logic
             const getTitle = (insightPanel as any).getOpportunityTitle.bind(insightPanel);
             
-            expect(getTitle('enhancement')).toBe('Writing enhancement');
-            expect(getTitle('quickfix')).toBe('Issues');
-            expect(getTitle('metrics')).toBe('Document analysis');
-            expect(getTitle('transform')).toBe('Content transform');
-        });
+			expect(getTitle('enhancement')).toBe('Writing enhancement');
+			expect(getTitle('metrics')).toBe('Document analysis');
+			expect(getTitle('transform')).toBe('Content transform');
+		});
 
         test('should return default title for unknown opportunity types', () => {
             const getTitle = (insightPanel as any).getOpportunityTitle.bind(insightPanel);
             
-            expect(getTitle('unknown')).toBe('Command options');
-            expect(getTitle('')).toBe('Command options');
-            expect(getTitle(null)).toBe('Command options');
-            expect(getTitle(undefined)).toBe('Command options');
+			expect(getTitle('unknown')).toBe('Command options');
+			expect(getTitle('quickfix')).toBe('Command options');
+			expect(getTitle('')).toBe('Command options');
+			expect(getTitle(null)).toBe('Command options');
+			expect(getTitle(undefined)).toBe('Command options');
         });
 
         test('should handle edge cases gracefully', () => {

@@ -72,7 +72,6 @@ export const COMMANDS = {
 /** Opportunity type display titles */
 export const OPPORTUNITY_TITLES = {
     enhancement: 'Writing enhancement',
-    quickfix: 'Issues', 
     metrics: 'Document analysis',
     transform: 'Content transform'
 } as const;

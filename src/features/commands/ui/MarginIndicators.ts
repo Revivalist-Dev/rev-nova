@@ -16,24 +16,14 @@ import { CodeMirrorIndicatorManager } from './codemirror-decorations';
 import type { SmartContext, MarkdownCommand, TimingDecision, TypingMetrics } from '../types';
 import type NovaPlugin from '../../../../main';
 
-interface SpecificIssue {
-    matchedText: string;
-    startIndex: number;
-    endIndex: number;
-    description: string;
-    suggestedFix?: string;
-}
-
 interface IndicatorOpportunity {
     line: number;
     column: number;
-    type: 'enhancement' | 'quickfix' | 'metrics' | 'transform';
+    type: 'enhancement' | 'metrics' | 'transform';
     icon: string;
     commands: MarkdownCommand[];
     confidence: number;
-    // Enhanced context for specific fixes
-    specificIssues?: SpecificIssue[];
-    issueCount?: number;
+    fillInstruction?: string;
 }
 
 export class MarginIndicators {
@@ -320,14 +310,7 @@ export class MarginIndicators {
                     icon: '📝',
                     commands: [], // No commands needed - markers use /fill
                     confidence: 1.0, // High confidence for explicit markers
-                    specificIssues: [{
-                        matchedText: `<!-- nova: ${marker.instruction.substring(0, 30)}${marker.instruction.length > 30 ? '...' : ''} -->`,
-                        startIndex: marker.position,
-                        endIndex: marker.position + marker.length,
-                        description: marker.instruction,
-                        suggestedFix: 'Use /fill to generate content'
-                    }],
-                    issueCount: 1
+                    fillInstruction: marker.instruction
                 });
             }
         }
@@ -516,7 +499,6 @@ export class MarginIndicators {
         
         // Adjust based on document type
         if (context.documentType === 'academic' && type === 'enhancement') confidence += 0.2;
-        if (context.documentType === 'blog' && type === 'quickfix') confidence += 0.3;
         
         // Adjust based on selection
         if (context.selection && context.selection.length > 10) confidence += 0.2;
@@ -623,23 +605,19 @@ export class MarginIndicators {
         }
 
         // Check if this is a fill opportunity (marker-based)
-        const isFillOpportunity = opportunity.icon === '📝' ||
-            opportunity.specificIssues?.some(issue => issue.suggestedFix?.includes('/fill'));
+        const isFillOpportunity = opportunity.icon === '📝' || !!opportunity.fillInstruction;
 
         if (isFillOpportunity) {
             // Execute fill for just this specific marker
             this.logger.info(`Executing fill for single marker at line ${opportunity.line + 1}`);
-            const instruction = opportunity.specificIssues?.[0]?.description;
-            void this.plugin.executeFillSingleWithProcessingState(opportunity.line, instruction);
+            void this.plugin.executeFillSingleWithProcessingState(opportunity.line, opportunity.fillInstruction);
             return;
         }
 
         // Show InsightPanel with full intelligence for other opportunities
-        // For quickfix opportunities, the commands are in specificIssues, not commands array
         const hasCommands = opportunity.commands.length > 0;
-        const hasSpecificIssues = (opportunity.specificIssues?.length ?? 0) > 0;
 
-        if (hasCommands || hasSpecificIssues) {
+        if (hasCommands) {
             this.insightPanel.showPanel(opportunity, clickedElement, this.activeView);
         } else {
             this.logger.warn(`No commands or issues available for ${opportunity.type} opportunity`);

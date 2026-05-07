@@ -179,7 +179,7 @@ export interface InsightDetection {
     };
     
     /** Type of insight detected */
-    type: 'enhancement' | 'quick_fix' | 'metrics' | 'transformation';
+    type: 'enhancement' | 'metrics' | 'transformation';
     
     /** Icon to display */
     icon: string;

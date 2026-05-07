@@ -13,7 +13,7 @@ import type { SmartContext } from '../../../src/features/commands/types';
 interface IndicatorOpportunity {
     line: number;
     column: number;
-    type: 'enhancement' | 'quickfix' | 'metrics' | 'transform';
+    type: 'enhancement' | 'metrics' | 'transform';
     icon: string;
     commands: any[];
     confidence: number;
@@ -699,9 +699,9 @@ describe('MarginIndicators', () => {
             test('should filter opportunities based on intensity level', () => {
                 const mockOpportunities = [
                     { confidence: 0.9, type: 'enhancement', line: 1, column: 0, icon: '💡', commands: [] },
-                    { confidence: 0.7, type: 'quickfix', line: 2, column: 0, icon: '⚡', commands: [] },
-                    { confidence: 0.5, type: 'metrics', line: 3, column: 0, icon: '📊', commands: [] },
-                    { confidence: 0.3, type: 'transform', line: 4, column: 0, icon: '✨', commands: [] }
+                    { confidence: 0.7, type: 'metrics', line: 2, column: 0, icon: '📊', commands: [] },
+                    { confidence: 0.5, type: 'transform', line: 3, column: 0, icon: '✨', commands: [] },
+                    { confidence: 0.3, type: 'enhancement', line: 4, column: 0, icon: '💡', commands: [] }
                 ];
 
                 // Test minimal mode (0.8 threshold)

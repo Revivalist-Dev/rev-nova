@@ -12,24 +12,14 @@ import { INSIGHT_PANEL, OPPORTUNITY_TITLES, COMMANDS, CSS_CLASSES, CM_SELECTORS 
 import type { MarkdownCommand } from '../types';
 import type NovaPlugin from '../../../../main';
 
-interface SpecificIssue {
-    matchedText: string;
-    startIndex: number;
-    endIndex: number;
-    description: string;
-    suggestedFix?: string;
-}
-
 interface IndicatorOpportunity {
     line: number;
     column: number;
-    type: 'enhancement' | 'quickfix' | 'metrics' | 'transform';
+    type: 'enhancement' | 'metrics' | 'transform';
     icon: string;
     commands: MarkdownCommand[];
     confidence: number;
-    // Enhanced context for specific fixes
-    specificIssues?: SpecificIssue[];
-    issueCount?: number;
+    fillInstruction?: string;
 }
 
 export class InsightPanel {
@@ -167,17 +157,7 @@ export class InsightPanel {
 
         const title = header.createSpan({ cls: 'nova-insight-panel-title' });
         
-        // Show appropriate title based on issue count
-        if (opportunity.issueCount && opportunity.issueCount > 0) {
-            if (opportunity.issueCount === 1) {
-                title.textContent = '1 issue';
-            } else {
-                // Show count in title for consistent bold formatting
-                title.textContent = `${opportunity.issueCount} issues`;
-            }
-        } else {
-            title.textContent = this.getOpportunityTitle(opportunity.type);
-        }
+        title.textContent = this.getOpportunityTitle(opportunity.type);
     }
 
     /**
@@ -186,15 +166,8 @@ export class InsightPanel {
     private createContent(panel: HTMLElement, opportunity: IndicatorOpportunity): void {
         const content = panel.createDiv({ cls: CSS_CLASSES.PANEL_CONTENT });
 
-        // Check if this is a marker opportunity (indicated by icon 📝 and suggestedFix containing /fill)
-        if (opportunity.icon === '📝' && opportunity.specificIssues?.length === 1) {
+        if (opportunity.fillInstruction) {
             this.createMarkerOption(content, opportunity);
-        } else if (opportunity.specificIssues && opportunity.specificIssues.length > 1) {
-            // ONLY show combined fix option - no individual fixes to prevent broken grammar
-            this.createCombinedFixOption(content, opportunity);
-        } else if (opportunity.specificIssues?.length === 1) {
-            // Single issue - safe to apply individually
-            this.createSpecificIssueOption(content, opportunity.specificIssues[0], opportunity);
         } else {
             // Fallback to generic commands
             const commandsToShow = opportunity.commands.slice(0, this.MAX_VISIBLE_COMMANDS);
@@ -214,7 +187,7 @@ export class InsightPanel {
         const header = option.createDiv({ cls: 'nova-command-option-header' });
 
         const instructionText = header.createDiv({ cls: 'nova-marker-instruction' });
-        const instruction = opportunity.specificIssues?.[0]?.description || 'Placeholder';
+        const instruction = opportunity.fillInstruction || 'Placeholder';
         instructionText.textContent = instruction.length > 60 ? instruction.substring(0, 57) + '...' : instruction;
 
         const actionButton = header.createSpan({
@@ -297,93 +270,6 @@ export class InsightPanel {
         this.plugin.registerDomEvent(option, 'click', (event) => {
             event.stopPropagation();
             void this.executeCommand(command);
-        });
-    }
-
-    /**
-     * Create a specific issue option element showing exact text changes
-     */
-    private createSpecificIssueOption(container: HTMLElement, issue: SpecificIssue, opportunity: IndicatorOpportunity): void {
-        const option = container.createDiv({ cls: CSS_CLASSES.COMMAND_OPTION });
-
-        // Header with specific change and action button
-        const header = option.createDiv({ cls: 'nova-command-option-header' });
-        
-        const changeText = header.createDiv({ cls: 'nova-specific-change' });
-        
-        // Show the specific text change
-        const originalText = changeText.createSpan({ cls: 'nova-original-text' });
-        originalText.textContent = `"${issue.matchedText}"`;
-        
-        const arrow = changeText.createSpan({ cls: 'nova-change-arrow' });
-        arrow.textContent = ' → ';
-        
-        const suggestedText = changeText.createSpan({ cls: 'nova-suggested-text' });
-        suggestedText.textContent = issue.suggestedFix || 'improved';
-        
-        const actionButton = header.createSpan({
-            cls: CSS_CLASSES.COMMAND_ACTION,
-            text: COMMANDS.APPLY_BUTTON_TEXT
-        });
-
-        // On mobile, add class for always-visible styling
-        if (Platform.isMobile) {
-            actionButton.addClass('mobile-visible');
-        }
-
-        // Add accessibility attributes
-        actionButton.setAttr('role', 'button');
-        actionButton.setAttr('tabindex', '0');
-
-        // Description showing what this fixes
-        const description = option.createDiv({ cls: CSS_CLASSES.COMMAND_DESCRIPTION });
-        description.textContent = issue.description;
-
-        // Register click handler for the specific fix
-        this.plugin.registerDomEvent(option, 'click', (event) => {
-            event.stopPropagation();
-            void this.executeSpecificFix(issue, opportunity);
-        });
-    }
-
-    /**
-     * Create a combined fix option for multiple issues on the same line
-     */
-    private createCombinedFixOption(container: HTMLElement, opportunity: IndicatorOpportunity): void {
-        const option = container.createDiv({ cls: CSS_CLASSES.COMMAND_OPTION });
-        
-        // Header shows it will fix ALL issues
-        const header = option.createDiv({ cls: 'nova-command-option-header' });
-        
-        const fixText = header.createSpan({ cls: 'nova-combined-fix' });
-        fixText.textContent = 'Fix all issues for proper grammar:';
-        
-        const actionButton = header.createSpan({
-            cls: CSS_CLASSES.COMMAND_ACTION,
-            text: COMMANDS.APPLY_BUTTON_TEXT
-        });
-
-        // On mobile, add class for always-visible styling
-        if (Platform.isMobile) {
-            actionButton.addClass('mobile-visible');
-        }
-
-        // Add accessibility attributes
-        actionButton.setAttr('role', 'button');
-        actionButton.setAttr('tabindex', '0');
-        
-        // Show what issues will be fixed (informational only, not clickable)
-        const details = option.createDiv({ cls: 'nova-fix-details' });
-        
-        for (const issue of opportunity.specificIssues || []) {
-            const issueItem = details.createDiv({ cls: 'nova-issue-item-info' });
-            issueItem.textContent = `• "${issue.matchedText}" → ${issue.suggestedFix || 'improved'}`;
-        }
-        
-        // Single click handler for all fixes
-        this.plugin.registerDomEvent(option, 'click', (event) => {
-            event.stopPropagation();
-            void this.applyAllFixes(opportunity);
         });
     }
 
@@ -519,148 +405,6 @@ export class InsightPanel {
         } catch (error) {
             this.logger.error(`Failed to execute command ${command.name}:`, error);
         }
-    }
-
-    /**
-     * Execute a specific fix for a detected issue
-     */
-    private executeSpecificFix(issue: SpecificIssue, opportunity: IndicatorOpportunity): void {
-        this.logger.info(`Executing specific fix: ${issue.matchedText} → ${issue.suggestedFix}`);
-        
-        try {
-            // Ensure we have the opportunity context and active view
-            if (!this.currentOpportunity || !this.activeView || !this.activeView.editor) {
-                this.logger.error('Missing context for specific fix execution');
-                return;
-            }
-
-            const editor = this.activeView.editor;
-            
-            // Hide panel before making changes
-            this.hidePanel();
-
-            // Get the current line content
-            const lineContent = editor.getLine(opportunity.line);
-            
-            // Replace the specific text
-            const newLineContent = lineContent.replace(issue.matchedText, issue.suggestedFix || 'improved');
-            
-            // Apply the change
-            editor.replaceRange(
-                newLineContent,
-                { line: opportunity.line, ch: 0 },
-                { line: opportunity.line, ch: lineContent.length }
-            );
-            
-            this.logger.info(`Applied specific fix: "${issue.matchedText}" → "${issue.suggestedFix}"`);
-            
-            // Trigger immediate indicator refresh for better UX
-            if (this.plugin.marginIndicators) {
-                // Clear the cache for the modified line so it gets re-analyzed
-                this.plugin.marginIndicators.clearLineCacheForLine(opportunity.line);
-                // Trigger immediate re-analysis
-                void this.plugin.marginIndicators.analyzeCurrentContext();
-            }
-        } catch (error) {
-            this.logger.error(`Failed to execute specific fix:`, error);
-        }
-    }
-
-    /**
-     * Apply all fixes for multiple issues on the same line
-     */
-    private async applyAllFixes(opportunity: IndicatorOpportunity): Promise<void> {
-        this.logger.info(`Applying all fixes for ${opportunity.issueCount} issues on line ${opportunity.line}`);
-        
-        try {
-            // Ensure we have the opportunity context and active view
-            if (!this.currentOpportunity || !this.activeView || !this.activeView.editor) {
-                this.logger.error('Missing context for combined fix execution');
-                return;
-            }
-
-            const editor = this.activeView.editor;
-            
-            // Hide panel before making changes
-            this.hidePanel();
-
-            // Get the current line content
-            const lineContent = editor.getLine(opportunity.line);
-            
-            // For passive voice with multiple issues, use AI for intelligent restructuring
-            if (opportunity.type === 'quickfix' && this.hasPassiveVoiceIssues(opportunity.specificIssues || [])) {
-                this.logger.info('Using AI restructuring for passive voice fixes');
-                
-                // Select the line for AI processing
-                editor.setSelection(
-                    { line: opportunity.line, ch: 0 },
-                    { line: opportunity.line, ch: lineContent.length }
-                );
-                
-                // Build context and execute fix passive voice command
-                const context = this.plugin.smartVariableResolver?.buildSmartContext();
-                if (context) {
-                    // Create a fix passive voice command
-                    const fixCommand: MarkdownCommand = {
-                        id: 'fix-passive-voice-line',
-                        name: 'Fix Passive Voice',
-                        description: 'Convert passive voice to active voice with proper grammar',
-                        template: 'Rewrite this sentence in active voice with proper grammar: {selection}',
-                        example: '"The document was written by the author" → "The author wrote the document"',
-                        keywords: ['passive', 'voice', 'active', 'grammar'],
-                        category: 'technical',
-                        iconType: '⚡',
-                        variables: [
-                            {
-                                name: 'selection',
-                                description: 'Selected text to fix',
-                                required: true,
-                                resolver: 'selection'
-                            }
-                        ]
-                    };
-                    
-                    await this.commandEngine.executeCommand(fixCommand, context);
-                }
-            } else {
-                // For other types of fixes (like weak words), apply them together
-                let newLine = lineContent;
-                
-                // Apply all fixes in reverse order to maintain positions
-                const sortedIssues = [...(opportunity.specificIssues || [])].sort((a, b) => b.startIndex - a.startIndex);
-                for (const issue of sortedIssues) {
-                    if (issue.suggestedFix && issue.suggestedFix !== 'use active voice') {
-                        newLine = newLine.substring(0, issue.startIndex) + 
-                                 issue.suggestedFix + 
-                                 newLine.substring(issue.endIndex);
-                    }
-                }
-                
-                editor.replaceRange(
-                    newLine,
-                    { line: opportunity.line, ch: 0 },
-                    { line: opportunity.line, ch: lineContent.length }
-                );
-            }
-            
-            this.logger.info(`Applied combined fixes for line ${opportunity.line}`);
-            
-            // Trigger immediate indicator refresh
-            if (this.plugin.marginIndicators) {
-                this.plugin.marginIndicators.clearLineCacheForLine(opportunity.line);
-                void this.plugin.marginIndicators.analyzeCurrentContext();
-            }
-
-        } catch (error) {
-            this.logger.error(`Failed to apply combined fixes:`, error);
-        }
-    }
-
-    /**
-     * Check if issues contain passive voice problems
-     */
-    private hasPassiveVoiceIssues(issues: SpecificIssue[]): boolean {
-        return issues.some(issue => issue.description.includes('passive'));
     }
 
     /**
