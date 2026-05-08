@@ -144,6 +144,9 @@ export class NovaSidebarView extends ItemView {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 		container.addClass('nova-sidebar-container');
+		this.registerDomEvent(container, 'click', () => {
+			this.plugin.writingAnalysisManager?.setProseLinterReviewActive(false);
+		});
 		
 		// Add platform-specific class for styling
 		if (Platform.isMobile) {
@@ -487,6 +490,10 @@ export class NovaSidebarView extends ItemView {
 		// Clean up DOM elements
 		this.cleanupDOMElements();
 	}
+
+	onResize(): void {
+		this.deactivateProseLinterReviewIfShown();
+	}
 	
 	/**
 	 * Add event listener using Obsidian's registration system
@@ -574,16 +581,8 @@ export class NovaSidebarView extends ItemView {
 		this.writingStatsPanel = new WritingStatsPanel({
 			container: this.wrapperEl,
 			registerDomEvent: (el, type, handler) => this.registerDomEvent(el as HTMLElement, type, handler as (this: HTMLElement, ev: Event) => void),
-			onToggleHighlights: () => {
-				const manager = this.plugin.writingAnalysisManager;
-				manager?.setHighlightsVisible(!manager.isHighlightsVisible());
-			},
 			onAnalyze: () => {
-				const manager = this.plugin.writingAnalysisManager;
-				if (manager && !manager.isHighlightsVisible()) {
-					manager.setHighlightsVisible(true);
-				}
-				void manager?.analyzeNow();
+				void this.plugin.writingAnalysisManager?.analyzeNow();
 			},
 			onOpenProseLinter: () => {
 				void this.plugin.activateProseLinter();
@@ -1785,7 +1784,6 @@ USER REQUEST: ${processedMessage}`;
 			analysis: manager?.getLatestAnalysis() ?? null,
 			filePath: manager?.getActiveFile()?.path ?? null,
 			eligible: manager?.isEligibleActiveFile() ?? false,
-			highlightsVisible: manager?.isHighlightsVisible() ?? true,
 			disabledByFrontmatter: manager?.isDisabledByFrontmatter() ?? false,
 			runToken: manager.getActiveRunToken()
 		};
@@ -1794,7 +1792,6 @@ USER REQUEST: ${processedMessage}`;
 			analysis: currentDetail.analysis,
 			eligible: currentDetail.eligible,
 			visible: this.plugin.settings.writingAnalysis.enabled && this.plugin.settings.writingAnalysis.showStatsPanel,
-			highlightsVisible: currentDetail.highlightsVisible,
 			disabledByFrontmatter: currentDetail.disabledByFrontmatter
 		});
 	}
@@ -2999,6 +2996,25 @@ USER REQUEST: ${processedMessage}`;
 	 */
 	private isMarkdownView(view: ItemView | null): view is MarkdownView {
 		return view instanceof MarkdownView && view.editor !== undefined;
+	}
+
+	private deactivateProseLinterReviewIfShown(): void {
+		if (!this.isSidebarShown()) {
+			return;
+		}
+
+		this.plugin.writingAnalysisManager?.setProseLinterReviewActive(false);
+	}
+
+	private isSidebarShown(): boolean {
+		const view = this as unknown as { isShown?: () => boolean };
+		if (typeof view.isShown !== 'function') {
+			return true;
+		}
+		if (view.isShown()) {
+			return true;
+		}
+		return Boolean(this.containerEl.offsetParent || this.containerEl.getClientRects().length > 0);
 	}
 
 }

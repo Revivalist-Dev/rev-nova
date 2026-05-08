@@ -41,10 +41,6 @@ export interface WritingAnalysisSettings {
 	enabled: boolean;
 	longSentenceThreshold: number;
 	veryLongSentenceThreshold: number;
-	highlightLongSentences: boolean;
-	highlightPassiveVoice: boolean;
-	highlightAdverbs: boolean;
-	highlightWeakIntensifiers: boolean;
 	showStatsPanel: boolean;
 }
 
@@ -138,10 +134,6 @@ export const DEFAULT_SETTINGS: NovaSettings = {
 		enabled: true,
 		longSentenceThreshold: 25,
 		veryLongSentenceThreshold: 40,
-		highlightLongSentences: true,
-		highlightPassiveVoice: true,
-		highlightAdverbs: true,
-		highlightWeakIntensifiers: true,
 		showStatsPanel: true
 	},
 	dashboard: {
@@ -1253,16 +1245,6 @@ export class NovaSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(writingSection)
-			.setName('Highlight long sentences')
-			.setDesc('Underline long and very long sentences inline')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.writingAnalysis.highlightLongSentences)
-				.onChange(async (value) => {
-					this.plugin.settings.writingAnalysis.highlightLongSentences = value;
-					await this.handleWritingAnalysisSettingsChange();
-				}));
-
-		new Setting(writingSection)
 			.setName('Long sentence threshold')
 			.setDesc('Sentences longer than this many words are flagged as long')
 			.addText(text => text
@@ -1291,36 +1273,6 @@ export class NovaSettingTab extends PluginSettingTab {
 						this.plugin.settings.writingAnalysis.veryLongSentenceThreshold = parsed;
 						await this.handleWritingAnalysisSettingsChange();
 					}
-				}));
-
-		new Setting(writingSection)
-			.setName('Highlight passive voice')
-			.setDesc('Underline passive constructions inline')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.writingAnalysis.highlightPassiveVoice)
-				.onChange(async (value) => {
-					this.plugin.settings.writingAnalysis.highlightPassiveVoice = value;
-					await this.handleWritingAnalysisSettingsChange();
-				}));
-
-		new Setting(writingSection)
-			.setName('Highlight adverbs')
-			.setDesc('Underline adverbs matched by the local analysis engine')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.writingAnalysis.highlightAdverbs)
-				.onChange(async (value) => {
-					this.plugin.settings.writingAnalysis.highlightAdverbs = value;
-					await this.handleWritingAnalysisSettingsChange();
-				}));
-
-		new Setting(writingSection)
-			.setName('Highlight weak intensifiers')
-			.setDesc('Underline weak intensifiers like very, really, and actually')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.writingAnalysis.highlightWeakIntensifiers)
-				.onChange(async (value) => {
-					this.plugin.settings.writingAnalysis.highlightWeakIntensifiers = value;
-					await this.handleWritingAnalysisSettingsChange();
 				}));
 
 		new Setting(writingSection)

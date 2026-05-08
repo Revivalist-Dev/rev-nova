@@ -9,7 +9,6 @@ export interface WritingStatsPanelState {
     analysis: WritingAnalysis | null;
     eligible: boolean;
     visible: boolean;
-    highlightsVisible: boolean;
     disabledByFrontmatter: boolean;
 }
 
@@ -20,7 +19,6 @@ export interface WritingStatsPanelDeps {
         type: K,
         handler: (this: HTMLElement, ev: HTMLElementEventMap[K]) => void
     ) => void;
-    onToggleHighlights: () => void;
     onAnalyze: () => void;
     onOpenProseLinter: () => void;
 }
@@ -123,14 +121,14 @@ export class WritingStatsPanel {
         if (state.disabledByFrontmatter) {
             const disabledEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-empty' });
             disabledEl.textContent = 'Writing analysis is turned off for this note via frontmatter.';
-            this.renderActions(state.highlightsVisible);
+            this.renderActions();
             return;
         }
 
         if (!state.analysis) {
             const emptyEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-empty' });
             emptyEl.textContent = 'Open a markdown note to analyze writing.';
-            this.renderActions(state.highlightsVisible);
+            this.renderActions();
             return;
         }
 
@@ -158,22 +156,15 @@ export class WritingStatsPanel {
             this.getIntensifierClass(state.analysis.weakIntensifierCount)
         );
 
-        this.renderActions(state.highlightsVisible);
+        this.renderActions();
     }
 
-    private renderActions(highlightsVisible: boolean): void {
+    private renderActions(): void {
         if (!this.bodyEl) {
             return;
         }
 
         const actionsEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-actions' });
-
-        const toggleButton = actionsEl.createEl('button', {
-            cls: 'nova-writing-panel-button',
-            text: highlightsVisible ? 'Hide highlights' : 'Show highlights'
-        });
-        toggleButton.setAttribute('type', 'button');
-        toggleButton.setAttribute('aria-label', highlightsVisible ? 'Hide writing highlights' : 'Show writing highlights');
 
         const analyzeButton = actionsEl.createEl('button', {
             cls: 'nova-writing-panel-button nova-writing-panel-button--primary',
@@ -188,12 +179,6 @@ export class WritingStatsPanel {
         });
         linterButton.setAttribute('type', 'button');
         linterButton.setAttribute('aria-label', 'Open prose linter');
-
-        this.deps.registerDomEvent(toggleButton, 'click', (event: MouseEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.deps.onToggleHighlights();
-        });
 
         this.deps.registerDomEvent(analyzeButton, 'click', (event: MouseEvent) => {
             event.preventDefault();

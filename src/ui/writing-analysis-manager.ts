@@ -2,13 +2,13 @@
  * @file WritingAnalysisManager - Coordinates deterministic writing analysis for the active Markdown editor
  */
 
-import { Editor, MarkdownView, TFile } from 'obsidian';
+import { Editor, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import { analyzeWriting, hashContent, hasWritingAnalysisOptOut, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
 import { createAnalysisRunToken, isStaleAnalysisRun, type AnalysisRunToken } from '../core/writing-analysis-runner';
 import { CodeMirrorWritingHighlightManager, type WritingHighlight } from '../features/commands/ui/codemirror-decorations';
 import { PROSE_ISSUE_LABELS, type ProseIssue } from '../features/prose-linter/prose-linter-types';
-import { VIEW_TYPE_NOVA_SIDEBAR } from '../constants';
+import { VIEW_TYPE_NOVA_SIDEBAR, VIEW_TYPE_PROSE_LINTER } from '../constants';
 import { VIEW_TYPE_WRITING_DASHBOARD } from './writing-dashboard-view';
 import { Logger } from '../utils/logger';
 import { TimeoutManager } from '../utils/timeout-manager';
@@ -20,7 +20,6 @@ export interface WritingAnalysisUpdateDetail {
     analysis: WritingAnalysis | null;
     filePath: string | null;
     eligible: boolean;
-    highlightsVisible: boolean;
     disabledByFrontmatter: boolean;
     runToken: AnalysisRunToken;
 }
@@ -38,7 +37,6 @@ export class WritingAnalysisManager {
     private activeView: MarkdownView | null = null;
     private highlightManager: CodeMirrorWritingHighlightManager | null = null;
     private latestAnalysis: WritingAnalysis | null = null;
-    private highlightsVisible = true;
     private disabledByFrontmatter = false;
     private observedEditors = new WeakSet<HTMLElement>();
     private pendingAnalysisTimeout: number | null = null;
@@ -49,6 +47,8 @@ export class WritingAnalysisManager {
     private proseLinterHighlights: WritingHighlight[] | null = null;
     private proseLinterHighlightFilePath: string | null = null;
     private proseLinterHighlightContentHash: string | null = null;
+    private proseLinterReviewActive = false;
+    private pendingReviewModeReconcileTimeout: number | null = null;
 
     constructor(plugin: NovaPlugin) {
         this.plugin = plugin;
@@ -57,8 +57,7 @@ export class WritingAnalysisManager {
     init(): void {
         this.plugin.registerEvent(
             this.plugin.app.workspace.on('active-leaf-change', (leaf) => {
-                this.currentLeafViewType = leaf?.view.getViewType() ?? null;
-                void this.refreshForActiveView(true);
+                this.handleActiveLeafChange(leaf ?? null);
             })
         );
 
@@ -68,6 +67,31 @@ export class WritingAnalysisManager {
             })
         );
 
+        this.plugin.registerEvent(
+            this.plugin.app.workspace.on('layout-change', () => {
+                this.scheduleProseLinterReviewReconcile();
+            })
+        );
+
+        this.plugin.registerEvent(
+            this.plugin.app.workspace.on('resize', () => {
+                this.scheduleProseLinterReviewReconcile();
+            })
+        );
+
+        this.plugin.registerDomEvent(document, 'click', (event: MouseEvent) => {
+            this.handleWorkspaceInteraction(event);
+        }, { capture: true });
+
+        this.plugin.registerDomEvent(document, 'pointerdown', (event: PointerEvent) => {
+            this.handleWorkspaceInteraction(event);
+        }, { capture: true });
+
+        this.plugin.registerDomEvent(document, 'focusin', (event: FocusEvent) => {
+            this.handleWorkspaceInteraction(event);
+        }, { capture: true });
+
+        this.reconcileProseLinterReviewMode();
         void this.refreshForActiveView(true);
     }
 
@@ -179,10 +203,6 @@ export class WritingAnalysisManager {
         return this.isEligibleView(this.activeView);
     }
 
-    isHighlightsVisible(): boolean {
-        return this.highlightsVisible;
-    }
-
     isDisabledByFrontmatter(): boolean {
         return this.disabledByFrontmatter;
     }
@@ -220,15 +240,18 @@ export class WritingAnalysisManager {
         this.applyHighlights();
     }
 
-    setHighlightsVisible(visible: boolean): void {
-        this.highlightsVisible = visible;
+    setProseLinterReviewActive(active: boolean): void {
+        if (this.proseLinterReviewActive === active) {
+            return;
+        }
+        this.proseLinterReviewActive = active;
         this.applyHighlights();
-        this.emitUpdate(this.isEligibleView(this.activeView));
     }
 
     cleanup(): void {
         this.timeoutManager.clearAll();
         this.pendingAnalysisTimeout = null;
+        this.pendingReviewModeReconcileTimeout = null;
         if (this.pendingIdleHandle !== null) {
             cancelIdleAnalysis(this.pendingIdleHandle);
             this.pendingIdleHandle = null;
@@ -304,7 +327,6 @@ export class WritingAnalysisManager {
                 analysis: this.latestAnalysis,
                 filePath: this.activeView?.file?.path ?? null,
                 eligible,
-                highlightsVisible: this.highlightsVisible,
                 disabledByFrontmatter: this.disabledByFrontmatter,
                 runToken: this.activeRunToken
             } satisfies WritingAnalysisUpdateDetail
@@ -312,99 +334,22 @@ export class WritingAnalysisManager {
     }
 
     private applyHighlights(): void {
-        if (!this.highlightManager || !this.highlightsVisible) {
+        if (!this.highlightManager) {
             this.clearHighlights();
             return;
         }
 
-        const proseLinterHighlights = this.getCurrentProseLinterHighlights();
-        if (proseLinterHighlights) {
-            this.highlightManager.updateHighlights(proseLinterHighlights);
+        if (this.proseLinterReviewActive) {
+            const proseLinterHighlights = this.getCurrentProseLinterHighlights();
+            if (proseLinterHighlights) {
+                this.highlightManager.updateHighlights(proseLinterHighlights);
+            } else {
+                this.clearHighlights();
+            }
             return;
         }
 
-        if (!this.latestAnalysis) {
-            this.clearHighlights();
-            return;
-        }
-
-        const highlights = this.buildHighlights(this.latestAnalysis);
-        this.highlightManager.updateHighlights(highlights);
-    }
-
-    private buildHighlights(analysis: WritingAnalysis): WritingHighlight[] {
-        const highlights: WritingHighlight[] = [];
-        const settings = this.plugin.settings.writingAnalysis;
-
-        if (settings.highlightLongSentences) {
-            analysis.sentences.forEach(sentence => {
-                if (sentence.severity === 'ok') {
-                    return;
-                }
-
-                const highlight = this.createHighlight(
-                    sentence.line,
-                    sentence.startCh,
-                    sentence.endCh,
-                    sentence.severity === 'very-long' ? 'very-long-sentence' : 'long-sentence',
-                    `This sentence has ${sentence.wordCount} words. Consider splitting it.`
-                );
-
-                if (highlight) {
-                    highlights.push(highlight);
-                }
-            });
-        }
-
-        if (settings.highlightPassiveVoice) {
-            analysis.passiveVoice.forEach(match => {
-                const highlight = this.createHighlight(
-                    match.line,
-                    match.startCh,
-                    match.endCh,
-                    'passive-voice',
-                    'Passive voice detected. Consider rewriting in active voice.'
-                );
-
-                if (highlight) {
-                    highlights.push(highlight);
-                }
-            });
-        }
-
-        if (settings.highlightAdverbs) {
-            analysis.adverbs.forEach(match => {
-                const highlight = this.createHighlight(
-                    match.line,
-                    match.startCh,
-                    match.endCh,
-                    'adverb',
-                    `'${match.word}' - consider whether this adverb is necessary.`
-                );
-
-                if (highlight) {
-                    highlights.push(highlight);
-                }
-            });
-        }
-
-        if (settings.highlightWeakIntensifiers) {
-            analysis.weakIntensifiers.forEach(match => {
-                const highlight = this.createHighlight(
-                    match.line,
-                    match.startCh,
-                    match.endCh,
-                    'weak-intensifier',
-                    `'${match.word}' - consider removing or using a stronger word.`
-                );
-
-                if (highlight) {
-                    highlights.push(highlight);
-                }
-            });
-        }
-
-        return highlights;
+        this.clearHighlights();
     }
 
     private createHighlight(
@@ -524,6 +469,252 @@ export class WritingAnalysisManager {
         // graph, Nova sidebar, etc.). Only clear when switching to the writing
         // dashboard, which has its own analysis display.
         return this.currentLeafViewType !== VIEW_TYPE_WRITING_DASHBOARD;
+    }
+
+    private handleActiveLeafChange(leaf: WorkspaceLeaf | null): void {
+        this.currentLeafViewType = leaf?.view.getViewType() ?? null;
+
+        if (this.currentLeafViewType === VIEW_TYPE_PROSE_LINTER) {
+            this.setProseLinterReviewActive(true);
+        } else if (this.currentLeafViewType !== 'markdown') {
+            this.setProseLinterReviewActive(false);
+        }
+
+        void this.refreshForActiveView(true);
+    }
+
+    private handleWorkspaceInteraction(event: Event): void {
+        const clickedViewType = this.getClickedNovaViewType(event.target);
+        if (clickedViewType === VIEW_TYPE_PROSE_LINTER) {
+            this.setProseLinterReviewActive(true);
+            this.scheduleProseLinterReviewReconcile();
+            return;
+        }
+
+        if (clickedViewType === VIEW_TYPE_NOVA_SIDEBAR) {
+            this.setProseLinterReviewActive(false);
+        }
+
+        this.scheduleProseLinterReviewReconcile();
+    }
+
+    private getClickedNovaViewType(target: EventTarget | null): string | null {
+        if (!(target instanceof Element)) {
+            return null;
+        }
+
+        const clickedSurfaceViewType = this.getNovaSurfaceViewTypeFromElement(target);
+        if (clickedSurfaceViewType) {
+            return clickedSurfaceViewType;
+        }
+
+        const labeledAncestorViewType = this.getNovaViewTypeFromLabeledAncestors(target);
+        if (labeledAncestorViewType) {
+            return labeledAncestorViewType;
+        }
+
+        const tabHeader = target.closest('.workspace-tab-header');
+        if (!tabHeader) {
+            return null;
+        }
+
+        const label = [
+            tabHeader.getAttribute('aria-label'),
+            tabHeader.getAttribute('title'),
+            tabHeader.textContent
+        ]
+            .filter((value): value is string => Boolean(value))
+            .join(' ')
+            .toLowerCase();
+
+        if (label.includes('prose linter')) {
+            return VIEW_TYPE_PROSE_LINTER;
+        }
+
+        if (label.includes('nova')) {
+            return VIEW_TYPE_NOVA_SIDEBAR;
+        }
+
+        return null;
+    }
+
+    private getNovaViewTypeFromLabeledAncestors(target: Element): string | null {
+        let element: Element | null = target;
+        let depth = 0;
+
+        while (element && depth < 8) {
+            const viewType = this.getNovaViewTypeFromLabel([
+                element.getAttribute('aria-label'),
+                element.getAttribute('title')
+            ]);
+            if (viewType) {
+                return viewType;
+            }
+
+            element = element.parentElement;
+            depth++;
+        }
+
+        return null;
+    }
+
+    private getNovaViewTypeFromLabel(labels: Array<string | null>): string | null {
+        const label = labels
+            .filter((value): value is string => Boolean(value))
+            .join(' ')
+            .toLowerCase();
+
+        if (label.includes('prose linter')) {
+            return VIEW_TYPE_PROSE_LINTER;
+        }
+
+        if (label === 'nova' || label.includes('nova sidebar')) {
+            return VIEW_TYPE_NOVA_SIDEBAR;
+        }
+
+        return null;
+    }
+
+    private reconcileProseLinterReviewMode(): void {
+        const topVisibleSurface = this.getTopVisibleNovaSurfaceViewType();
+        if (topVisibleSurface === VIEW_TYPE_PROSE_LINTER) {
+            this.setProseLinterReviewActive(true);
+            return;
+        }
+
+        if (topVisibleSurface === VIEW_TYPE_NOVA_SIDEBAR) {
+            this.setProseLinterReviewActive(false);
+            return;
+        }
+
+        const visibleNovaSurface = this.getVisibleNovaSurfaceViewType();
+        if (visibleNovaSurface === VIEW_TYPE_PROSE_LINTER) {
+            this.setProseLinterReviewActive(true);
+            return;
+        }
+
+        if (visibleNovaSurface === VIEW_TYPE_NOVA_SIDEBAR) {
+            this.setProseLinterReviewActive(false);
+            return;
+        }
+
+        if (this.currentLeafViewType === VIEW_TYPE_PROSE_LINTER) {
+            this.setProseLinterReviewActive(true);
+            return;
+        }
+
+        if (this.currentLeafViewType === VIEW_TYPE_NOVA_SIDEBAR || this.currentLeafViewType === VIEW_TYPE_WRITING_DASHBOARD) {
+            this.setProseLinterReviewActive(false);
+        }
+    }
+
+    private scheduleProseLinterReviewReconcile(): void {
+        if (this.pendingReviewModeReconcileTimeout !== null) {
+            this.timeoutManager.removeTimeout(this.pendingReviewModeReconcileTimeout);
+        }
+
+        this.pendingReviewModeReconcileTimeout = this.timeoutManager.addTimeout(() => {
+            this.pendingReviewModeReconcileTimeout = null;
+            this.reconcileProseLinterReviewMode();
+        }, 0);
+    }
+
+    private getVisibleNovaSurfaceViewType(): string | null {
+        const proseLinterVisible = this.isAnyElementVisible('.nova-prose-linter-view');
+        const sidebarVisible = this.isAnyElementVisible('.nova-sidebar-container');
+
+        if (proseLinterVisible && !sidebarVisible) {
+            return VIEW_TYPE_PROSE_LINTER;
+        }
+
+        if (sidebarVisible && !proseLinterVisible) {
+            return VIEW_TYPE_NOVA_SIDEBAR;
+        }
+
+        return null;
+    }
+
+    private getTopVisibleNovaSurfaceViewType(): string | null {
+        const ownerDocument = this.plugin.app.workspace.containerEl?.ownerDocument ?? document;
+        if (typeof ownerDocument.elementFromPoint !== 'function') {
+            return null;
+        }
+
+        const ownerWindow = ownerDocument.defaultView ?? window;
+        const viewportWidth = ownerDocument.documentElement.clientWidth || ownerWindow.innerWidth;
+        const viewportHeight = ownerDocument.documentElement.clientHeight || ownerWindow.innerHeight;
+        const samplePoints = this.getRightPaneSamplePoints(viewportWidth, viewportHeight);
+
+        for (const point of samplePoints) {
+            const topElement = ownerDocument.elementFromPoint(point.x, point.y);
+            const viewType = this.getNovaSurfaceViewTypeFromElement(topElement);
+            if (viewType) {
+                return viewType;
+            }
+        }
+
+        return null;
+    }
+
+    private getRightPaneSamplePoints(viewportWidth: number, viewportHeight: number): Array<{ x: number; y: number }> {
+        const xOffsets = [80, 160, 260];
+        const yPositions = [
+            96,
+            180,
+            Math.round(viewportHeight / 2),
+            Math.max(0, viewportHeight - 160)
+        ];
+        const points: Array<{ x: number; y: number }> = [];
+
+        for (const xOffset of xOffsets) {
+            const x = viewportWidth - xOffset;
+            if (x < 0 || x > viewportWidth) {
+                continue;
+            }
+            for (const y of yPositions) {
+                if (y < 0 || y > viewportHeight) {
+                    continue;
+                }
+                points.push({ x, y });
+            }
+        }
+
+        return points;
+    }
+
+    private getNovaSurfaceViewTypeFromElement(element: Element | null): string | null {
+        if (!element) {
+            return null;
+        }
+
+        if (element.closest('.nova-prose-linter-view')) {
+            return VIEW_TYPE_PROSE_LINTER;
+        }
+
+        if (element.closest('.nova-sidebar-container')) {
+            return VIEW_TYPE_NOVA_SIDEBAR;
+        }
+
+        return null;
+    }
+
+    private isAnyElementVisible(selector: string): boolean {
+        return Array.from(document.querySelectorAll(selector)).some(element => this.isElementVisible(element));
+    }
+
+    private isElementVisible(element: Element): boolean {
+        const htmlElement = element as HTMLElement;
+        if (htmlElement.getClientRects().length === 0) {
+            return false;
+        }
+
+        const ownerWindow = element.ownerDocument.defaultView;
+        if (!ownerWindow) {
+            return true;
+        }
+
+        const style = ownerWindow.getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden';
     }
 
     private startAnalysisRun(filePath: string | null): AnalysisRunToken {

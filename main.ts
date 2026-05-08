@@ -625,7 +625,8 @@ export default class NovaPlugin extends Plugin {
 			await leaf?.setViewState({ type: VIEW_TYPE_NOVA_SIDEBAR, active: true });
 		}
 
-		void workspace.revealLeaf(leaf!);
+		await workspace.revealLeaf(leaf!);
+		this.writingAnalysisManager?.setProseLinterReviewActive(false);
 
 		// Store reference to sidebar view
 		if (leaf?.view instanceof NovaSidebarView) {
@@ -665,7 +666,11 @@ export default class NovaPlugin extends Plugin {
 		}
 
 		if (leaf) {
-			void workspace.revealLeaf(leaf);
+			await workspace.revealLeaf(leaf);
+			this.writingAnalysisManager?.setProseLinterReviewActive(true);
+			if (leaf.view instanceof ProseLinterView) {
+				void leaf.view.refresh();
+			}
 		}
 	}
 

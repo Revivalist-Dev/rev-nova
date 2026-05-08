@@ -46,6 +46,7 @@ describe('ProseLinterView', () => {
 				getActiveEditor: jest.fn(() => editor),
 				getActiveRunToken: jest.fn(() => createAnalysisRunToken(path, hashContent(content), 1)),
 				setProseLinterIssues: jest.fn(),
+				setProseLinterReviewActive: jest.fn(),
 				clearProseLinterHighlights: jest.fn()
 			},
 			registerDomEvent: jest.fn((element: HTMLElement, type: string, handler: EventListener) => {
@@ -73,6 +74,7 @@ describe('ProseLinterView', () => {
 		const text = view.containerEl.textContent ?? '';
 
 		expect(view.getDisplayText()).toBe('Nova prose linter');
+		expect(plugin.writingAnalysisManager.setProseLinterReviewActive).toHaveBeenCalledWith(true);
 		expect(text).toContain('Nova');
 		expect(text).toContain('Open a markdown note');
 		expect(text).not.toContain('Supernova');
@@ -95,7 +97,7 @@ describe('ProseLinterView', () => {
 		expect(text).toContain('Grade');
 		expect(text).toContain('words');
 		expect(text).toContain('weakeners');
-		expect(text).toContain('words with simpler alternatives');
+		expect(text).toContain('complex words');
 		expect(text).toContain('Jump');
 		expect(text).not.toContain('per 1,000 words');
 		expect(text).not.toContain('Top categories');
@@ -127,6 +129,101 @@ describe('ProseLinterView', () => {
 		jumpButton.click();
 
 		expect(selectionSpy).toHaveBeenCalledWith({ line: 0, ch: 0 }, { line: 0, ch: 5 });
+	});
+
+	test('reactivates review mode when an existing prose linter tab is shown', async () => {
+		const content = 'Maybe we should facilitate adoption.';
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+
+		plugin.writingAnalysisManager.setProseLinterReviewActive.mockClear();
+		plugin.writingAnalysisManager.setProseLinterIssues.mockClear();
+		(view as unknown as { isShown: () => boolean }).isShown = () => true;
+
+		view.onResize();
+
+		expect(plugin.writingAnalysisManager.setProseLinterReviewActive).toHaveBeenCalledWith(true);
+		expect(plugin.writingAnalysisManager.setProseLinterIssues).toHaveBeenCalledWith(
+			'notes/current.md',
+			hashContent(content),
+			expect.arrayContaining([
+				expect.objectContaining({ type: 'qualifier' }),
+				expect.objectContaining({ type: 'complex-word' })
+			])
+		);
+	});
+
+	test('does not reactivate review mode when the Nova sidebar is the top visible pane', async () => {
+		const content = 'Maybe we should facilitate adoption.';
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+		const rootEl = (view as any).rootEl as HTMLElement;
+		const sidebar = document.createElement('div');
+		sidebar.classList.add('nova-sidebar-container');
+		document.body.appendChild(sidebar);
+		const originalElementFromPoint = document.elementFromPoint;
+
+		plugin.writingAnalysisManager.setProseLinterReviewActive.mockClear();
+		plugin.writingAnalysisManager.setProseLinterIssues.mockClear();
+		(view as unknown as { isShown: () => boolean }).isShown = () => true;
+		Object.defineProperty(rootEl, 'getClientRects', {
+			configurable: true,
+			value: () => ({ length: 1 })
+		});
+		Object.defineProperty(rootEl, 'getBoundingClientRect', {
+			configurable: true,
+			value: () => ({
+				left: 100,
+				right: 420,
+				top: 40,
+				bottom: 640,
+				width: 320,
+				height: 600
+			})
+		});
+		Object.defineProperty(document, 'elementFromPoint', {
+			configurable: true,
+			value: jest.fn(() => sidebar)
+		});
+
+		view.onResize();
+
+		expect(plugin.writingAnalysisManager.setProseLinterReviewActive).not.toHaveBeenCalled();
+		expect(plugin.writingAnalysisManager.setProseLinterIssues).not.toHaveBeenCalled();
+
+		Object.defineProperty(document, 'elementFromPoint', {
+			configurable: true,
+			value: originalElementFromPoint
+		});
+		sidebar.remove();
+	});
+
+	test('does not trust isShown when the hidden prose pane has no layout box', async () => {
+		const content = 'Maybe we should facilitate adoption.';
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+		const rootEl = (view as any).rootEl as HTMLElement;
+		const sidebar = document.createElement('div');
+		sidebar.classList.add('nova-sidebar-container');
+		document.body.appendChild(sidebar);
+
+		plugin.writingAnalysisManager.setProseLinterReviewActive.mockClear();
+		plugin.writingAnalysisManager.setProseLinterIssues.mockClear();
+		(view as unknown as { isShown: () => boolean }).isShown = () => true;
+		Object.defineProperty(rootEl, 'getClientRects', {
+			configurable: true,
+			value: () => ({ length: 0 })
+		});
+		Object.defineProperty(sidebar, 'getClientRects', {
+			configurable: true,
+			value: () => ({ length: 1 })
+		});
+
+		view.onResize();
+
+		expect(plugin.writingAnalysisManager.setProseLinterReviewActive).not.toHaveBeenCalled();
+		expect(plugin.writingAnalysisManager.setProseLinterIssues).not.toHaveBeenCalled();
+		sidebar.remove();
 	});
 
 	test('shows Apply only for exact safe replacements and applies through the editor API', async () => {
@@ -242,6 +339,7 @@ describe('ProseLinterView', () => {
 
 		await view.onClose();
 
+		expect(plugin.writingAnalysisManager.setProseLinterReviewActive).toHaveBeenCalledWith(false);
 		expect(plugin.writingAnalysisManager.clearProseLinterHighlights).toHaveBeenCalledWith('notes/current.md');
 	});
 });

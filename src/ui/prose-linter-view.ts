@@ -4,6 +4,7 @@
 
 import { Editor, ItemView, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
 import type NovaPlugin from '../../main';
+import { VIEW_TYPE_PROSE_LINTER } from '../constants';
 import { analyzeWriting, hashContent, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
 import { createAnalysisRunToken } from '../core/writing-analysis-runner';
 import { buildProseIssues } from '../features/prose-linter/prose-linter-issues';
@@ -17,7 +18,7 @@ import {
 } from '../features/prose-linter/prose-linter-types';
 import { WRITING_ANALYSIS_UPDATED_EVENT, type WritingAnalysisUpdateDetail } from './writing-analysis-manager';
 
-export const VIEW_TYPE_PROSE_LINTER = 'nova-prose-linter';
+export { VIEW_TYPE_PROSE_LINTER };
 
 interface ProseLinterRenderState {
 	file: TFile | null;
@@ -78,8 +79,8 @@ const PROSE_LINTER_CATEGORY_GROUPS: ProseLinterCategoryGroup[] = [
 		key: 'alternatives',
 		issueTypes: ['complex-word'],
 		displayType: 'complex-word',
-		singular: 'word with a simpler alternative',
-		plural: 'words with simpler alternatives'
+		singular: 'complex word',
+		plural: 'complex words'
 	}
 ];
 
@@ -128,6 +129,7 @@ export class ProseLinterView extends ItemView {
 	async onOpen(): Promise<void> {
 		await this.plugin.proseLinterStore.load();
 		this.buildLayout();
+		this.activateReviewIfShown();
 		this.registerEvent(this.app.workspace.on('file-open', () => {
 			void this.refresh();
 		}));
@@ -138,12 +140,18 @@ export class ProseLinterView extends ItemView {
 			this.handleWritingAnalysisUpdated(event);
 		});
 		await this.refresh();
+		this.activateReviewIfShown();
 	}
 
 	async onClose(): Promise<void> {
+		this.plugin.writingAnalysisManager?.setProseLinterReviewActive(false);
 		this.plugin.writingAnalysisManager?.clearProseLinterHighlights(this.state.file?.path);
 		this.rootEl?.empty();
 		await Promise.resolve();
+	}
+
+	onResize(): void {
+		this.activateReviewIfShown();
 	}
 
 	async refresh(forceOversized = false): Promise<void> {
@@ -234,6 +242,9 @@ export class ProseLinterView extends ItemView {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 		container.addClass('nova-prose-linter-view');
+		this.registerDomEvent(container, 'click', () => {
+			this.activateReviewIfShown();
+		});
 		this.rootEl = container;
 
 		const headerEl = container.createDiv({ cls: 'nova-prose-linter-header' });
@@ -543,5 +554,100 @@ export class ProseLinterView extends ItemView {
 		if (detail.filePath === this.state.file?.path || (!detail.filePath && !this.state.file)) {
 			void this.refresh();
 		}
+	}
+
+	private activateReviewIfShown(): void {
+		if (!this.isProseLinterShown()) {
+			return;
+		}
+
+		this.plugin.writingAnalysisManager?.setProseLinterReviewActive(true);
+		this.syncEditorHighlights();
+	}
+
+	private isProseLinterShown(): boolean {
+		const topmostState = this.isRootTopmostNovaSurface('.nova-prose-linter-view');
+		if (topmostState !== null) {
+			return topmostState;
+		}
+
+		const view = this as unknown as { isShown?: () => boolean };
+		if (typeof view.isShown !== 'function') {
+			return true;
+		}
+		if (view.isShown()) {
+			return true;
+		}
+		return Boolean(this.rootEl && (this.rootEl.offsetParent || this.rootEl.getClientRects().length > 0));
+	}
+
+	private isRootTopmostNovaSurface(expectedSelector: string): boolean | null {
+		if (!this.rootEl) {
+			return null;
+		}
+
+		if (this.rootEl.getClientRects().length === 0) {
+			return this.isCompetingNovaSurfaceVisible(expectedSelector) ? false : null;
+		}
+
+		const ownerDocument = this.rootEl.ownerDocument;
+		if (typeof ownerDocument.elementFromPoint !== 'function') {
+			return null;
+		}
+
+		const rect = this.rootEl.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) {
+			return null;
+		}
+
+		const samplePoints = this.getRootSamplePoints(rect);
+		for (const point of samplePoints) {
+			const topElement = ownerDocument.elementFromPoint(point.x, point.y);
+			const novaSurface = topElement?.closest('.nova-prose-linter-view, .nova-sidebar-container');
+			if (!novaSurface) {
+				continue;
+			}
+
+			return novaSurface === this.rootEl && novaSurface.matches(expectedSelector);
+		}
+
+		return null;
+	}
+
+	private isCompetingNovaSurfaceVisible(expectedSelector: string): boolean {
+		const competingSelector = expectedSelector === '.nova-prose-linter-view'
+			? '.nova-sidebar-container'
+			: '.nova-prose-linter-view';
+
+		return Array.from(this.rootEl?.ownerDocument.querySelectorAll(competingSelector) ?? [])
+			.some(element => this.isElementVisible(element));
+	}
+
+	private isElementVisible(element: Element): boolean {
+		if (element.getClientRects().length === 0) {
+			return false;
+		}
+
+		const ownerWindow = element.ownerDocument.defaultView;
+		if (!ownerWindow) {
+			return true;
+		}
+
+		const style = ownerWindow.getComputedStyle(element);
+		return style.display !== 'none' && style.visibility !== 'hidden';
+	}
+
+	private getRootSamplePoints(rect: DOMRect): Array<{ x: number; y: number }> {
+		const left = rect.left + Math.min(Math.max(rect.width / 2, 24), Math.max(rect.width - 1, 0));
+		const right = rect.right - Math.min(24, Math.max(rect.width - 1, 0));
+		const centerX = rect.left + rect.width / 2;
+		const top = rect.top + Math.min(96, Math.max(rect.height - 1, 0));
+		const centerY = rect.top + rect.height / 2;
+
+		return [
+			{ x: centerX, y: top },
+			{ x: left, y: centerY },
+			{ x: right, y: centerY }
+		];
 	}
 }

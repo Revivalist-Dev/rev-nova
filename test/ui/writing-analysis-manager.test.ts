@@ -3,7 +3,7 @@
  */
 
 import { Editor, MarkdownView, TFile } from 'obsidian';
-import { VIEW_TYPE_NOVA_SIDEBAR } from '../../src/constants';
+import { VIEW_TYPE_NOVA_SIDEBAR, VIEW_TYPE_PROSE_LINTER } from '../../src/constants';
 import { hashContent } from '../../src/core/writing-analysis';
 import { WRITING_ANALYSIS_UPDATED_EVENT, WritingAnalysisManager, type WritingAnalysisUpdateDetail } from '../../src/ui/writing-analysis-manager';
 
@@ -11,6 +11,7 @@ describe('WritingAnalysisManager', () => {
 	function createManager(activeLeafViewType: string) {
 		const workspace = {
 			getActiveViewOfType: jest.fn(() => null),
+			getLeavesOfType: jest.fn(() => []),
 			on: jest.fn(() => ({ unsubscribe: () => undefined }))
 		};
 
@@ -44,6 +45,15 @@ describe('WritingAnalysisManager', () => {
 		view.file = new TFile('notes/current.md');
 		view.editor = new Editor('A tracked note with enough text to stand in for the active markdown editor.');
 		return view;
+	}
+
+	function attachHighlightSpy(manager: WritingAnalysisManager) {
+		const highlightManager = {
+			updateHighlights: jest.fn(),
+			clearHighlights: jest.fn()
+		};
+		(manager as any).highlightManager = highlightManager;
+		return highlightManager;
 	}
 
 	test('clears writing analysis when the active leaf becomes the writing dashboard', async () => {
@@ -96,6 +106,230 @@ describe('WritingAnalysisManager', () => {
 		expect(manager.getLatestAnalysis()).toEqual({ readabilityGrade: 8 });
 	});
 
+	test('hides editor highlights when focus moves from prose linter to another Nova pane', async () => {
+		const { manager } = createManager(VIEW_TYPE_NOVA_SIDEBAR);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).latestAnalysis = { readabilityGrade: 8 } as never;
+		(manager as any).proseLinterHighlights = [{
+			from: 0,
+			to: 8,
+			type: 'complex-word',
+			title: 'Complex word: use a simpler alternative.'
+		}];
+		(manager as any).proseLinterHighlightFilePath = 'notes/current.md';
+		(manager as any).proseLinterHighlightContentHash = hashContent(manager.getActiveContent() ?? '');
+		const highlightManager = attachHighlightSpy(manager);
+
+		(manager as any).handleActiveLeafChange({
+			view: { getViewType: () => VIEW_TYPE_PROSE_LINTER }
+		});
+		expect(highlightManager.updateHighlights).toHaveBeenCalledWith(expect.arrayContaining([
+			expect.objectContaining({ type: 'complex-word' })
+		]));
+
+		(manager as any).handleActiveLeafChange({
+			view: { getViewType: () => VIEW_TYPE_NOVA_SIDEBAR }
+		});
+
+		expect(highlightManager.clearHighlights).toHaveBeenCalled();
+		expect(manager.getActiveFile()?.path).toBe('notes/current.md');
+		expect(manager.getLatestAnalysis()).toEqual({ readabilityGrade: 8 });
+	});
+
+	test('hides prose linter highlights when layout reports the Nova sidebar as active', () => {
+		const { manager } = createManager(VIEW_TYPE_NOVA_SIDEBAR);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = true;
+		(manager as any).currentLeafViewType = VIEW_TYPE_NOVA_SIDEBAR;
+		const highlightManager = attachHighlightSpy(manager);
+
+		(manager as any).reconcileProseLinterReviewMode();
+
+		expect((manager as any).proseLinterReviewActive).toBe(false);
+		expect(highlightManager.clearHighlights).toHaveBeenCalled();
+	});
+
+	test('hides prose linter highlights when the Nova tab header is clicked', () => {
+		const { manager } = createManager(VIEW_TYPE_NOVA_SIDEBAR);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = true;
+		const highlightManager = attachHighlightSpy(manager);
+		const tabHeader = document.createElement('div');
+		tabHeader.setAttribute('aria-label', 'Nova');
+		const tabIcon = document.createElement('span');
+		tabHeader.appendChild(tabIcon);
+		document.body.appendChild(tabHeader);
+
+		(manager as any).handleWorkspaceInteraction({ target: tabIcon });
+
+		expect((manager as any).proseLinterReviewActive).toBe(false);
+		expect(highlightManager.clearHighlights).toHaveBeenCalled();
+		tabHeader.remove();
+	});
+
+	test('shows prose linter highlights when the prose linter tab header is clicked', () => {
+		const { manager } = createManager(VIEW_TYPE_PROSE_LINTER);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = false;
+		(manager as any).proseLinterHighlights = [{
+			from: 0,
+			to: 8,
+			type: 'complex-word',
+			title: 'Complex word: use a simpler alternative.'
+		}];
+		(manager as any).proseLinterHighlightFilePath = 'notes/current.md';
+		(manager as any).proseLinterHighlightContentHash = hashContent(manager.getActiveContent() ?? '');
+		const highlightManager = attachHighlightSpy(manager);
+		const tabHeader = document.createElement('div');
+		tabHeader.setAttribute('aria-label', 'Nova prose linter');
+		const tabIcon = document.createElement('span');
+		tabHeader.appendChild(tabIcon);
+		document.body.appendChild(tabHeader);
+
+		(manager as any).handleWorkspaceInteraction({ target: tabIcon });
+
+		expect((manager as any).proseLinterReviewActive).toBe(true);
+		expect(highlightManager.updateHighlights).toHaveBeenCalledWith(expect.arrayContaining([
+			expect.objectContaining({ type: 'complex-word' })
+		]));
+		tabHeader.remove();
+	});
+
+	test('hides prose linter highlights when the Nova sidebar body is the visible Nova surface', () => {
+		const { manager } = createManager(VIEW_TYPE_NOVA_SIDEBAR);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = true;
+		const highlightManager = attachHighlightSpy(manager);
+		const sidebar = document.createElement('div');
+		sidebar.classList.add('nova-sidebar-container');
+		Object.defineProperty(sidebar, 'getClientRects', {
+			value: () => ({ length: 1 })
+		});
+		document.body.appendChild(sidebar);
+
+		(manager as any).reconcileProseLinterReviewMode();
+
+		expect((manager as any).proseLinterReviewActive).toBe(false);
+		expect(highlightManager.clearHighlights).toHaveBeenCalled();
+		sidebar.remove();
+	});
+
+	test('shows prose linter highlights when the prose linter body is the visible Nova surface', () => {
+		const { manager } = createManager(VIEW_TYPE_PROSE_LINTER);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = false;
+		(manager as any).proseLinterHighlights = [{
+			from: 0,
+			to: 8,
+			type: 'complex-word',
+			title: 'Complex word: use a simpler alternative.'
+		}];
+		(manager as any).proseLinterHighlightFilePath = 'notes/current.md';
+		(manager as any).proseLinterHighlightContentHash = hashContent(manager.getActiveContent() ?? '');
+		const highlightManager = attachHighlightSpy(manager);
+		const proseLinter = document.createElement('div');
+		proseLinter.classList.add('nova-prose-linter-view');
+		Object.defineProperty(proseLinter, 'getClientRects', {
+			value: () => ({ length: 1 })
+		});
+		document.body.appendChild(proseLinter);
+
+		(manager as any).reconcileProseLinterReviewMode();
+
+		expect((manager as any).proseLinterReviewActive).toBe(true);
+		expect(highlightManager.updateHighlights).toHaveBeenCalledWith(expect.arrayContaining([
+			expect.objectContaining({ type: 'complex-word' })
+		]));
+		proseLinter.remove();
+	});
+
+	test('uses the topmost right-pane surface when both Nova panes have layout boxes', () => {
+		const { manager } = createManager(VIEW_TYPE_NOVA_SIDEBAR);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = true;
+		const highlightManager = attachHighlightSpy(manager);
+		const sidebar = document.createElement('div');
+		sidebar.classList.add('nova-sidebar-container');
+		const proseLinter = document.createElement('div');
+		proseLinter.classList.add('nova-prose-linter-view');
+		[sidebar, proseLinter].forEach((element) => {
+			Object.defineProperty(element, 'getClientRects', {
+				value: () => ({ length: 1 })
+			});
+			document.body.appendChild(element);
+		});
+		const originalElementFromPoint = document.elementFromPoint;
+		Object.defineProperty(document, 'elementFromPoint', {
+			configurable: true,
+			value: jest.fn(() => sidebar)
+		});
+
+		(manager as any).reconcileProseLinterReviewMode();
+
+		expect((manager as any).proseLinterReviewActive).toBe(false);
+		expect(highlightManager.clearHighlights).toHaveBeenCalled();
+
+		Object.defineProperty(document, 'elementFromPoint', {
+			configurable: true,
+			value: originalElementFromPoint
+		});
+		sidebar.remove();
+		proseLinter.remove();
+	});
+
+	test('samples multiple right-pane points when reconciling the visible Nova surface', () => {
+		const { manager } = createManager(VIEW_TYPE_NOVA_SIDEBAR);
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = true;
+		const highlightManager = attachHighlightSpy(manager);
+		const sidebar = document.createElement('div');
+		sidebar.classList.add('nova-sidebar-container');
+		Object.defineProperty(sidebar, 'getClientRects', {
+			value: () => ({ length: 1 })
+		});
+		document.body.appendChild(sidebar);
+		const originalElementFromPoint = document.elementFromPoint;
+		Object.defineProperty(document, 'elementFromPoint', {
+			configurable: true,
+			value: jest.fn()
+				.mockReturnValueOnce(null)
+				.mockReturnValueOnce(sidebar)
+		});
+
+		(manager as any).reconcileProseLinterReviewMode();
+
+		expect((manager as any).proseLinterReviewActive).toBe(false);
+		expect(highlightManager.clearHighlights).toHaveBeenCalled();
+
+		Object.defineProperty(document, 'elementFromPoint', {
+			configurable: true,
+			value: originalElementFromPoint
+		});
+		sidebar.remove();
+	});
+
+	test('keeps prose linter review mode active when focus returns to the markdown editor', () => {
+		const { manager } = createManager('markdown');
+		(manager as any).activeView = createTrackedMarkdownView();
+		(manager as any).proseLinterReviewActive = true;
+		(manager as any).proseLinterHighlights = [{
+			from: 0,
+			to: 8,
+			type: 'complex-word',
+			title: 'Complex word: use a simpler alternative.'
+		}];
+		(manager as any).proseLinterHighlightFilePath = 'notes/current.md';
+		(manager as any).proseLinterHighlightContentHash = hashContent(manager.getActiveContent() ?? '');
+		const highlightManager = attachHighlightSpy(manager);
+
+		(manager as any).handleActiveLeafChange({
+			view: { getViewType: () => 'markdown' }
+		});
+
+		expect((manager as any).proseLinterReviewActive).toBe(true);
+		expect(highlightManager.clearHighlights).not.toHaveBeenCalled();
+	});
+
 	describe('size gate', () => {
 		function createManagerWithEditor(docLength: number) {
 			const workspace = {
@@ -111,11 +345,7 @@ describe('WritingAnalysisManager', () => {
 					writingAnalysis: {
 						enabled: true,
 						longSentenceThreshold: 25,
-						veryLongSentenceThreshold: 40,
-						highlightLongSentences: true,
-						highlightPassiveVoice: true,
-						highlightAdverbs: true,
-						highlightWeakIntensifiers: true
+						veryLongSentenceThreshold: 40
 					}
 				},
 				registerEvent: jest.fn(),
@@ -209,11 +439,7 @@ describe('WritingAnalysisManager', () => {
 					writingAnalysis: {
 						enabled: true,
 						longSentenceThreshold: 25,
-						veryLongSentenceThreshold: 40,
-						highlightLongSentences: false,
-						highlightPassiveVoice: false,
-						highlightAdverbs: false,
-						highlightWeakIntensifiers: false
+						veryLongSentenceThreshold: 40
 					}
 				},
 				registerEvent: jest.fn(),
