@@ -1,0 +1,547 @@
+/**
+ * @file ProseLinterView - Dedicated current-note Prose Linter view
+ */
+
+import { Editor, ItemView, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
+import type NovaPlugin from '../../main';
+import { analyzeWriting, hashContent, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
+import { createAnalysisRunToken } from '../core/writing-analysis-runner';
+import { buildProseIssues } from '../features/prose-linter/prose-linter-issues';
+import { createProseIssuePage, PROSE_LINTER_INITIAL_VISIBLE_COUNT } from '../features/prose-linter/prose-linter-rendering';
+import { runBudgetedProseLinter, type ProseLinterRunnerState } from '../features/prose-linter/prose-linter-runner';
+import {
+	GENERAL_PROSE_CONFIG,
+	PROSE_ISSUE_LABELS,
+	type ProseIssue,
+	type ProseIssueType
+} from '../features/prose-linter/prose-linter-types';
+import { WRITING_ANALYSIS_UPDATED_EVENT, type WritingAnalysisUpdateDetail } from './writing-analysis-manager';
+
+export const VIEW_TYPE_PROSE_LINTER = 'nova-prose-linter';
+
+interface ProseLinterRenderState {
+	file: TFile | null;
+	content: string;
+	analysis: WritingAnalysis | null;
+	issues: ProseIssue[];
+	deepState: ProseLinterRunnerState;
+	deferredRuleIds: string[];
+	oversized: boolean;
+	disabledByFrontmatter: boolean;
+}
+
+interface ProseLinterCategoryGroup {
+	key: string;
+	issueTypes: ProseIssueType[];
+	displayType: ProseIssueType;
+	singular: string;
+	plural: string;
+}
+
+const PROSE_LINTER_CATEGORY_GROUPS: ProseLinterCategoryGroup[] = [
+	{
+		key: 'very-hard',
+		issueTypes: ['very-long-sentence'],
+		displayType: 'very-long-sentence',
+		singular: 'very hard sentence',
+		plural: 'very hard sentences'
+	},
+	{
+		key: 'hard',
+		issueTypes: ['long-sentence'],
+		displayType: 'long-sentence',
+		singular: 'hard sentence',
+		plural: 'hard sentences'
+	},
+	{
+		key: 'repetition',
+		issueTypes: ['repeated-word', 'repeated-phrase', 'sticky-sentence', 'sentence-start'],
+		displayType: 'repeated-phrase',
+		singular: 'repeated word or phrase',
+		plural: 'repeated words or phrases'
+	},
+	{
+		key: 'passive',
+		issueTypes: ['passive-voice'],
+		displayType: 'passive-voice',
+		singular: 'passive voice issue',
+		plural: 'passive voice issues'
+	},
+	{
+		key: 'weakeners',
+		issueTypes: ['adverb', 'weak-intensifier', 'qualifier', 'telling-language'],
+		displayType: 'adverb',
+		singular: 'weakener',
+		plural: 'weakeners'
+	},
+	{
+		key: 'alternatives',
+		issueTypes: ['complex-word'],
+		displayType: 'complex-word',
+		singular: 'word with a simpler alternative',
+		plural: 'words with simpler alternatives'
+	}
+];
+
+export class ProseLinterView extends ItemView {
+	private readonly plugin: NovaPlugin;
+	private rootEl: HTMLElement | null = null;
+	private summaryEl: HTMLElement | null = null;
+	private categoriesEl: HTMLElement | null = null;
+	private listEl: HTMLElement | null = null;
+	private emptyEl: HTMLElement | null = null;
+	private statusEl: HTMLElement | null = null;
+
+	private hiddenIssueTypes = new Set<ProseIssueType>();
+	private ignoredIssueIds = new Set<string>();
+	private visibleCount = PROSE_LINTER_INITIAL_VISIBLE_COUNT;
+	private lastContentHash = '';
+	private state: ProseLinterRenderState = {
+		file: null,
+		content: '',
+		analysis: null,
+		issues: [],
+		deepState: 'complete',
+		deferredRuleIds: [],
+		oversized: false,
+		disabledByFrontmatter: false
+	};
+
+	constructor(leaf: WorkspaceLeaf, plugin: NovaPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+		this.app = plugin.app;
+	}
+
+	getViewType(): string {
+		return VIEW_TYPE_PROSE_LINTER;
+	}
+
+	getDisplayText(): string {
+		return 'Nova prose linter';
+	}
+
+	getIcon(): string {
+		return 'list-checks';
+	}
+
+	async onOpen(): Promise<void> {
+		await this.plugin.proseLinterStore.load();
+		this.buildLayout();
+		this.registerEvent(this.app.workspace.on('file-open', () => {
+			void this.refresh();
+		}));
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+			void this.refresh();
+		}));
+		this.registerDomEvent(document, WRITING_ANALYSIS_UPDATED_EVENT as keyof DocumentEventMap, (event: Event) => {
+			this.handleWritingAnalysisUpdated(event);
+		});
+		await this.refresh();
+	}
+
+	async onClose(): Promise<void> {
+		this.plugin.writingAnalysisManager?.clearProseLinterHighlights(this.state.file?.path);
+		this.rootEl?.empty();
+		await Promise.resolve();
+	}
+
+	async refresh(forceOversized = false): Promise<void> {
+		const file = this.getCurrentFile();
+		if (!file) {
+			this.state = {
+				file: null,
+				content: '',
+				analysis: null,
+				issues: [],
+				deepState: 'complete',
+				deferredRuleIds: [],
+				oversized: false,
+				disabledByFrontmatter: false
+			};
+			this.render();
+			return;
+		}
+
+		const content = await this.getCurrentContent(file);
+		const contentHash = hashContent(content);
+		if (contentHash !== this.lastContentHash) {
+			this.ignoredIssueIds.clear();
+			this.visibleCount = PROSE_LINTER_INITIAL_VISIBLE_COUNT;
+			this.lastContentHash = contentHash;
+		}
+
+		if (!forceOversized && content.length > MAX_LIVE_ANALYSIS_CHAR_LENGTH) {
+			this.state = {
+				file,
+				content,
+				analysis: null,
+				issues: [],
+				deepState: 'pending',
+				deferredRuleIds: [],
+				oversized: true,
+				disabledByFrontmatter: false
+			};
+			this.render();
+			return;
+		}
+
+		const analysis = analyzeWriting(content, {
+			longSentenceThreshold: GENERAL_PROSE_CONFIG.longSentenceWords,
+			veryLongSentenceThreshold: GENERAL_PROSE_CONFIG.veryLongSentenceWords
+		});
+		const disabledByFrontmatter = analysis.readabilityLabel.includes('disabled');
+		const runToken = this.plugin.writingAnalysisManager?.getActiveRunToken() ??
+			createAnalysisRunToken(file.path, contentHash, 0);
+		const deepResult = disabledByFrontmatter
+			? { issues: [], state: 'complete' as ProseLinterRunnerState, deferredRuleIds: [] }
+			: runBudgetedProseLinter({
+				content,
+				config: GENERAL_PROSE_CONFIG,
+				filePath: file.path,
+				runToken,
+				isStale: (token) => {
+					const active = this.plugin.writingAnalysisManager?.getActiveRunToken();
+					return Boolean(active && active.sequence > token.sequence && active.filePath !== token.filePath);
+				}
+			});
+		const ignoredIssueTypes = this.plugin.proseLinterStore.getIgnoredIssueTypes(file.path);
+		const issues = disabledByFrontmatter
+			? []
+			: buildProseIssues({
+				analysis,
+				content,
+				filePath: file.path,
+				deepIssues: deepResult.issues,
+				ignoredIssueIds: this.ignoredIssueIds,
+				ignoredIssueTypes
+			});
+
+		this.state = {
+			file,
+			content,
+			analysis,
+			issues,
+			deepState: deepResult.state,
+			deferredRuleIds: deepResult.deferredRuleIds,
+			oversized: false,
+			disabledByFrontmatter
+		};
+		this.render();
+	}
+
+	private buildLayout(): void {
+		const container = this.containerEl.children[1] as HTMLElement;
+		container.empty();
+		container.addClass('nova-prose-linter-view');
+		this.rootEl = container;
+
+		const headerEl = container.createDiv({ cls: 'nova-prose-linter-header' });
+		headerEl.createDiv({ cls: 'nova-prose-linter-brand', text: 'Nova' });
+		headerEl.createEl('h2', { cls: 'nova-prose-linter-title', text: 'Prose linter' });
+
+		this.summaryEl = container.createDiv({ cls: 'nova-prose-linter-summary' });
+		this.categoriesEl = container.createDiv({ cls: 'nova-prose-linter-categories' });
+		this.statusEl = container.createDiv({ cls: 'nova-prose-linter-status' });
+		this.listEl = container.createDiv({ cls: 'nova-prose-linter-list' });
+		this.emptyEl = container.createDiv({ cls: 'nova-prose-linter-empty' });
+	}
+
+	private render(): void {
+		this.renderSummary();
+		this.renderCategories();
+		this.renderStatus();
+		this.renderIssues();
+		this.syncEditorHighlights();
+	}
+
+	private renderSummary(): void {
+		if (!this.summaryEl) {
+			return;
+		}
+		this.summaryEl.empty();
+
+		if (!this.state.file) {
+			this.summaryEl.createDiv({ cls: 'nova-prose-linter-summary-empty', text: 'Open a markdown note to review prose.' });
+			return;
+		}
+
+		if (this.state.oversized) {
+			this.summaryEl.createDiv({
+				cls: 'nova-prose-linter-summary-empty',
+				text: 'This note is large. Run analysis when you are ready.'
+			});
+			const analyzeButton = this.summaryEl.createEl('button', {
+				cls: 'nova-prose-linter-button nova-prose-linter-button--primary',
+				text: 'Analyze note'
+			});
+			analyzeButton.setAttribute('type', 'button');
+			this.registerDomEvent(analyzeButton, 'click', () => {
+				void this.refresh(true);
+			});
+			return;
+		}
+
+		if (!this.state.analysis) {
+			this.summaryEl.createDiv({ cls: 'nova-prose-linter-summary-empty', text: 'Waiting for analysis.' });
+			return;
+		}
+
+		this.summaryEl.createDiv({
+			cls: 'nova-prose-linter-readout',
+			text: `Grade ${Math.round(this.state.analysis.readabilityGrade)} · ${this.state.analysis.wordCount.toLocaleString()} ${this.state.analysis.wordCount === 1 ? 'word' : 'words'}`
+		});
+	}
+
+	private renderCategories(): void {
+		if (!this.categoriesEl) {
+			return;
+		}
+		this.categoriesEl.empty();
+
+		const issuePool = this.createIssuePage(Number.MAX_SAFE_INTEGER, false).issues;
+		if (!this.state.file || this.state.oversized || this.state.disabledByFrontmatter || issuePool.length === 0) {
+			return;
+		}
+
+		for (const group of PROSE_LINTER_CATEGORY_GROUPS) {
+			const count = issuePool.filter((issue) => group.issueTypes.includes(issue.type)).length;
+			if (count === 0) {
+				continue;
+			}
+
+			const hidden = group.issueTypes.every((type) => this.hiddenIssueTypes.has(type));
+			const cardEl = this.categoriesEl.createEl('button', {
+				cls: `nova-prose-linter-category nova-prose-linter-category--${group.key} nova-prose-linter-row--${group.displayType} ${hidden ? 'nova-prose-linter-category--muted' : ''}`
+			});
+			cardEl.setAttribute('type', 'button');
+			cardEl.setAttribute('aria-pressed', hidden ? 'false' : 'true');
+			cardEl.setAttribute('aria-label', `${hidden ? 'Show' : 'Hide'} ${count === 1 ? group.singular : group.plural}`);
+			cardEl.createSpan({ cls: 'nova-prose-linter-category-count', text: count.toLocaleString() });
+			cardEl.createSpan({ cls: 'nova-prose-linter-category-label', text: count === 1 ? group.singular : group.plural });
+			let handledPointerActivation = false;
+			const toggleFromPointer = (event: MouseEvent | PointerEvent): void => {
+				if (event.button !== 0) {
+					return;
+				}
+				handledPointerActivation = true;
+				event.preventDefault();
+				event.stopPropagation();
+				this.toggleCategoryGroup(group);
+			};
+			this.registerDomEvent(cardEl, 'pointerdown', toggleFromPointer);
+			this.registerDomEvent(cardEl, 'mousedown', (event: MouseEvent) => {
+				if (handledPointerActivation) {
+					event.stopPropagation();
+					return;
+				}
+				toggleFromPointer(event);
+			});
+			this.registerDomEvent(cardEl, 'click', (event: MouseEvent) => {
+				event.preventDefault();
+				event.stopPropagation();
+				if (handledPointerActivation) {
+					handledPointerActivation = false;
+					return;
+				}
+				this.toggleCategoryGroup(group);
+			});
+		}
+	}
+
+	private renderStatus(): void {
+		if (!this.statusEl) {
+			return;
+		}
+		this.statusEl.empty();
+		if (this.state.disabledByFrontmatter) {
+			this.statusEl.setText('Writing analysis is turned off for this note via frontmatter.');
+			return;
+		}
+		if (this.state.deepState === 'pending') {
+			this.statusEl.setText('Some deeper checks are deferred so typing stays responsive.');
+			return;
+		}
+		this.statusEl.setText('');
+	}
+
+	private renderIssues(): void {
+		if (!this.listEl || !this.emptyEl) {
+			return;
+		}
+
+		this.listEl.empty();
+		this.emptyEl.empty();
+		const page = this.createIssuePage(this.visibleCount);
+
+		if (!this.state.file) {
+			this.emptyEl.setText('Open a markdown note to review prose.');
+			return;
+		}
+		if (this.state.oversized) {
+			this.emptyEl.setText('Large-note analysis is manual to keep Nova responsive.');
+			return;
+		}
+		if (page.issues.length === 0) {
+			let emptyText = 'No prose issues found.';
+			if (this.state.disabledByFrontmatter) {
+				emptyText = 'Analysis is disabled for this note.';
+			} else if (this.hiddenIssueTypes.size > 0) {
+				emptyText = 'No visible prose issues.';
+			}
+			this.emptyEl.setText(emptyText);
+			return;
+		}
+
+		page.issues.forEach((issue) => {
+			this.renderIssueRow(issue);
+		});
+
+		if (page.hasMore) {
+			const loadMoreButton = this.listEl.createEl('button', {
+				cls: 'nova-prose-linter-load-more',
+				text: `Show ${page.nextVisibleCount - page.visibleCount} more`
+			});
+			loadMoreButton.setAttribute('type', 'button');
+			this.registerDomEvent(loadMoreButton, 'click', () => {
+				this.visibleCount = page.nextVisibleCount;
+				this.renderIssues();
+			});
+		}
+	}
+
+	private renderIssueRow(issue: ProseIssue): void {
+		if (!this.listEl) {
+			return;
+		}
+
+		const rowEl = this.listEl.createDiv({
+			cls: `nova-prose-linter-row nova-prose-linter-row--${issue.severity} nova-prose-linter-row--${issue.type}`
+		});
+		rowEl.createDiv({ cls: 'nova-prose-linter-row-label', text: PROSE_ISSUE_LABELS[issue.type] });
+		rowEl.createDiv({ cls: 'nova-prose-linter-row-excerpt', text: issue.excerpt });
+		rowEl.createDiv({ cls: 'nova-prose-linter-row-explanation', text: issue.explanation });
+		rowEl.createDiv({ cls: 'nova-prose-linter-row-suggestion', text: issue.suggestion });
+
+		const actionsEl = rowEl.createDiv({ cls: 'nova-prose-linter-row-actions' });
+		this.createRowButton(actionsEl, 'Jump', () => this.jumpToIssue(issue), true);
+		this.createRowButton(actionsEl, 'Ignore', () => {
+			this.ignoredIssueIds.add(issue.id);
+			this.render();
+		});
+
+		if (issue.replacement && this.canApplyReplacement(issue)) {
+			this.createRowButton(actionsEl, 'Apply', () => this.applyReplacement(issue));
+		}
+	}
+
+	private createRowButton(container: HTMLElement, text: string, onClick: () => void, primary = false): void {
+		const button = container.createEl('button', {
+			cls: primary ? 'nova-prose-linter-row-button nova-prose-linter-row-button--primary' : 'nova-prose-linter-row-button',
+			text
+		});
+		button.setAttribute('type', 'button');
+		this.registerDomEvent(button, 'click', (event: MouseEvent) => {
+			event.preventDefault();
+			onClick();
+		});
+	}
+
+	private createIssuePage(visibleCount: number, includeHidden = true) {
+		return createProseIssuePage({
+			issues: this.state.issues,
+			visibleCount,
+			hiddenIssueTypes: includeHidden ? this.hiddenIssueTypes : new Set<ProseIssueType>(),
+			ignoredIssueIds: this.ignoredIssueIds,
+			ignoredIssueTypes: this.plugin.proseLinterStore.getIgnoredIssueTypes(this.state.file?.path ?? null)
+		});
+	}
+
+	private toggleCategoryGroup(group: ProseLinterCategoryGroup): void {
+		const shouldHide = group.issueTypes.some((type) => !this.hiddenIssueTypes.has(type));
+		for (const type of group.issueTypes) {
+			if (shouldHide) {
+				this.hiddenIssueTypes.add(type);
+			} else {
+				this.hiddenIssueTypes.delete(type);
+			}
+		}
+		this.visibleCount = PROSE_LINTER_INITIAL_VISIBLE_COUNT;
+		this.render();
+	}
+
+	private syncEditorHighlights(): void {
+		if (!this.state.file || this.state.oversized || this.state.disabledByFrontmatter) {
+			this.plugin.writingAnalysisManager?.clearProseLinterHighlights(this.state.file?.path);
+			return;
+		}
+		const issues = this.createIssuePage(Number.MAX_SAFE_INTEGER).issues;
+		if (issues.length === 0) {
+			this.plugin.writingAnalysisManager?.setProseLinterIssues(this.state.file.path, hashContent(this.state.content), []);
+		} else {
+			this.plugin.writingAnalysisManager?.setProseLinterIssues(this.state.file.path, hashContent(this.state.content), issues);
+		}
+	}
+
+	private jumpToIssue(issue: ProseIssue): void {
+		const editor = this.getActiveEditor();
+		if (!editor || !this.isIssueRangeValid(editor, issue)) {
+			return;
+		}
+		const from = { line: issue.line, ch: issue.startCh };
+		const to = { line: issue.line, ch: issue.endCh };
+		editor.setSelection(from, to);
+		editor.scrollIntoView({ from, to }, true);
+	}
+
+	private applyReplacement(issue: ProseIssue): void {
+		const editor = this.getActiveEditor();
+		if (!editor || !issue.replacement || !this.canApplyReplacement(issue)) {
+			return;
+		}
+		editor.replaceRange(issue.replacement.replacement, { line: issue.line, ch: issue.startCh }, { line: issue.line, ch: issue.endCh });
+		void this.refresh(true);
+	}
+
+	private canApplyReplacement(issue: ProseIssue): boolean {
+		const editor = this.getActiveEditor();
+		if (!editor || !issue.replacement || !this.isIssueRangeValid(editor, issue)) {
+			return false;
+		}
+		const current = editor.getLine(issue.line).slice(issue.startCh, issue.endCh);
+		return current === issue.replacement.source;
+	}
+
+	private isIssueRangeValid(editor: Editor, issue: ProseIssue): boolean {
+		if (issue.line < 0 || issue.line >= editor.lineCount()) {
+			return false;
+		}
+		const line = editor.getLine(issue.line);
+		return issue.startCh >= 0 && issue.endCh <= line.length && issue.endCh > issue.startCh;
+	}
+
+	private getCurrentFile(): TFile | null {
+		return this.plugin.writingAnalysisManager?.getActiveFile() ??
+			this.app.workspace.getActiveViewOfType(MarkdownView)?.file ??
+			null;
+	}
+
+	private async getCurrentContent(file: TFile): Promise<string> {
+		return this.plugin.writingAnalysisManager?.getActiveContent() ??
+			this.app.workspace.getActiveViewOfType(MarkdownView)?.editor?.getValue() ??
+			await this.app.vault.cachedRead(file);
+	}
+
+	private getActiveEditor(): Editor | null {
+		return this.plugin.writingAnalysisManager?.getActiveEditor() ??
+			this.app.workspace.getActiveViewOfType(MarkdownView)?.editor ??
+			null;
+	}
+
+	private handleWritingAnalysisUpdated(event: Event): void {
+		const detail = (event as CustomEvent<WritingAnalysisUpdateDetail>).detail;
+		if (detail.filePath === this.state.file?.path || (!detail.filePath && !this.state.file)) {
+			void this.refresh();
+		}
+	}
+}

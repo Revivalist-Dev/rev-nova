@@ -4,6 +4,7 @@ import { AIProviderManager } from './src/ai/provider-manager';
 import { NovaSidebarView, VIEW_TYPE_NOVA_SIDEBAR } from './src/ui/sidebar-view';
 import { ReleaseNotesView, VIEW_TYPE_RELEASE_NOTES } from './src/ui/release-notes-view';
 import { WritingDashboardView, VIEW_TYPE_WRITING_DASHBOARD } from './src/ui/writing-dashboard-view';
+import { ProseLinterView, VIEW_TYPE_PROSE_LINTER } from './src/ui/prose-linter-view';
 import { getRecentReleaseNotes, getReleaseNotes, type ReleaseNotesEntry } from './src/release-notes';
 import { isVersionNewer } from './src/utils/version';
 import { DocumentEngine } from './src/core/document-engine';
@@ -31,6 +32,7 @@ import { MarginIndicators } from './src/features/commands/ui/MarginIndicators';
 import { createIndicatorExtension } from './src/features/commands/ui/codemirror-decorations';
 import { toSmartTimingSettings } from './src/features/commands/types';
 import { WritingAnalysisManager } from './src/ui/writing-analysis-manager';
+import { ProseLinterStore } from './src/features/prose-linter/prose-linter-store';
 import type { StateField } from '@codemirror/state';
 import type { DecorationSet } from '@codemirror/view';
 
@@ -94,6 +96,7 @@ export default class NovaPlugin extends Plugin {
 	indicatorStateField!: StateField<{ decorations: DecorationSet; opportunities: Map<number, unknown> }>;
 	writingAnalysisManager!: WritingAnalysisManager;
 	writingAnalysisStateField!: StateField<DecorationSet>;
+	proseLinterStore!: ProseLinterStore;
 	private pendingReleaseNotes: ReleaseNotesEntry[] = [];
 	private pendingReleaseVersion: string | null = null;
 
@@ -144,6 +147,11 @@ export default class NovaPlugin extends Plugin {
 			};
 			this.conversationManager = new ConversationManager(dataStore);
 			await this.conversationManager.init();
+			this.proseLinterStore = new ProseLinterStore({
+				loadData: () => this.loadDataWithKey('proseLinter'),
+				saveData: (data) => this.saveDataWithKey('proseLinter', data)
+			});
+			await this.proseLinterStore.load();
 			this.documentEngine = new DocumentEngine(this.app, this.conversationManager);
 			this.contextBuilder = new ContextBuilder(this.settings);
 			this.commandParser = new CommandParser();
@@ -203,6 +211,11 @@ export default class NovaPlugin extends Plugin {
 			this.registerView(
 				VIEW_TYPE_WRITING_DASHBOARD,
 				(leaf) => new WritingDashboardView(leaf, this)
+			);
+
+			this.registerView(
+				VIEW_TYPE_PROSE_LINTER,
+				(leaf) => new ProseLinterView(leaf, this)
 			);
 
 			// Note: Wikilink autocomplete is now handled directly in sidebar view
@@ -268,6 +281,14 @@ export default class NovaPlugin extends Plugin {
 				name: 'Open writing dashboard',
 				callback: () => {
 					void this.activateWritingDashboard();
+				}
+			});
+
+			this.addCommand({
+				id: 'open-prose-linter',
+				name: 'Open prose linter',
+				callback: () => {
+					void this.activateProseLinter();
 				}
 			});
 
@@ -623,6 +644,24 @@ export default class NovaPlugin extends Plugin {
 		} else {
 			leaf = workspace.getLeaf('tab');
 			await leaf?.setViewState({ type: VIEW_TYPE_WRITING_DASHBOARD, active: true });
+		}
+
+		if (leaf) {
+			void workspace.revealLeaf(leaf);
+		}
+	}
+
+	async activateProseLinter() {
+		const { workspace } = this.app;
+
+		let leaf: WorkspaceLeaf | null;
+		const leaves = workspace.getLeavesOfType(VIEW_TYPE_PROSE_LINTER);
+
+		if (leaves.length > 0) {
+			leaf = leaves[0] as WorkspaceLeaf;
+		} else {
+			leaf = workspace.getRightLeaf(false);
+			await leaf?.setViewState({ type: VIEW_TYPE_PROSE_LINTER, active: true });
 		}
 
 		if (leaf) {

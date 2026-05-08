@@ -4,6 +4,7 @@
 
 import { Editor, MarkdownView, TFile } from 'obsidian';
 import { VIEW_TYPE_NOVA_SIDEBAR } from '../../src/constants';
+import { hashContent } from '../../src/core/writing-analysis';
 import { WRITING_ANALYSIS_UPDATED_EVENT, WritingAnalysisManager, type WritingAnalysisUpdateDetail } from '../../src/ui/writing-analysis-manager';
 
 describe('WritingAnalysisManager', () => {
@@ -166,6 +167,86 @@ describe('WritingAnalysisManager', () => {
 	describe('debounce timing', () => {
 		test('ANALYSIS_DEBOUNCE_MS is set to 1500 ms', () => {
 			expect((WritingAnalysisManager as any).ANALYSIS_DEBOUNCE_MS).toBe(1500);
+		});
+	});
+
+	describe('stale analysis protection', () => {
+		function createAsyncEditor(): Editor {
+			return {
+				getValue: () => undefined
+			} as unknown as Editor;
+		}
+
+		function createView(path: string): MarkdownView {
+			const view = new MarkdownView(null);
+			view.file = new TFile(path);
+			view.editor = createAsyncEditor();
+			return view;
+		}
+
+		test('does not assign or emit a delayed result after the active file changes', async () => {
+			let resolveOldRead: (content: string) => void = () => undefined;
+			const oldRead = new Promise<string>((resolve) => {
+				resolveOldRead = resolve;
+			});
+			const newContent = 'This active sentence stays current.';
+			const cachedRead = jest.fn((file: TFile) => {
+				if (file.path === 'notes/old.md') {
+					return oldRead;
+				}
+				return Promise.resolve(newContent);
+			});
+			const workspace = {
+				getActiveViewOfType: jest.fn(() => null),
+				on: jest.fn(() => ({ unsubscribe: () => undefined }))
+			};
+			const plugin = {
+				app: {
+					workspace,
+					vault: { cachedRead }
+				},
+				settings: {
+					writingAnalysis: {
+						enabled: true,
+						longSentenceThreshold: 25,
+						veryLongSentenceThreshold: 40,
+						highlightLongSentences: false,
+						highlightPassiveVoice: false,
+						highlightAdverbs: false,
+						highlightWeakIntensifiers: false
+					}
+				},
+				registerEvent: jest.fn(),
+				registerDomEvent: jest.fn(),
+				writingAnalysisStateField: {}
+			};
+			const manager = new WritingAnalysisManager(plugin as never);
+			const emitted: WritingAnalysisUpdateDetail[] = [];
+			const listener = (event: Event) => {
+				emitted.push((event as CustomEvent<WritingAnalysisUpdateDetail>).detail);
+			};
+			document.addEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+
+			try {
+				(manager as any).activeView = createView('notes/old.md');
+				const oldRun = (manager as any).runAnalysis();
+
+				(manager as any).activeView = createView('notes/new.md');
+				await (manager as any).runAnalysis();
+				resolveOldRead('The old report was written carefully.');
+				await oldRun;
+
+				expect(manager.getActiveFile()?.path).toBe('notes/new.md');
+				expect(manager.getLatestAnalysis()?.wordCount).toBe(5);
+				expect(manager.getActiveRunToken()).toEqual({
+					filePath: 'notes/new.md',
+					contentHash: hashContent(newContent),
+					sequence: 2
+				});
+				expect(emitted.map((detail) => detail.filePath)).toEqual(['notes/new.md']);
+			} finally {
+				document.removeEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+			}
 		});
 	});
 

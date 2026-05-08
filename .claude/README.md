@@ -12,10 +12,10 @@ This directory contains project-specific knowledge, workflows, and quality stand
 
 Nova also has product and planning docs outside the plugin repo. Read these when the task is about roadmap, specs, positioning, pricing, or feature prioritization.
 
-- `../07-Projects/Nova/Core Docs/`
-- `../07-Projects/Nova/Planning/`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Core Docs/`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Planning/`
 
-Use them for product intent and planning context, but verify the codebase before documenting shipped behavior.
+Use them for product intent and planning context, but verify the codebase before documenting shipped behavior. Do not create generated product docs, specs, or plans inside this plugin repo; update the existing vault documents in Nova's defined folder structure.
 
 ## Directory Structure
 

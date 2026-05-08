@@ -9,16 +9,16 @@ This skill captures durable product guidance from Nova's external product docs. 
 
 ## Canonical External Docs
 
-Read these docs outside the plugin repo when product context matters:
+Read these docs in the Basecamp Obsidian vault when product context matters:
 
-- `../07-Projects/Nova/Core Docs/Nova - Product Requirements Document.md`
-- `../07-Projects/Nova/Core Docs/Nova - Business Strategy & Marketing Plan.md`
-- `../07-Projects/Nova/Core Docs/Nova - User Guide.md`
-- `../07-Projects/Nova/Core Docs/Nova - Technical Implementation Specification.md`
-- `../07-Projects/Nova/Planning/Roadmap/Nova Roadmap - 2026.md`
-- `../07-Projects/Nova/Planning/Specs/Current/`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Core Docs/Nova - Product Requirements Document.md`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Core Docs/Nova - Business Strategy & Marketing Plan.md`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Core Docs/Nova - User Guide.md`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Core Docs/Nova - Technical Implementation Specification.md`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Planning/Roadmap/Nova Roadmap - 2026.md`
+- `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Planning/Specs/Current/`
 
-Treat those docs as the source of product intent and planning context. Treat the codebase as the source of truth for what is already shipped.
+Treat those vault docs as the source of product intent and planning context. Treat the codebase as the source of truth for what is already shipped. Do not create generated product docs, specs, or plans inside the plugin repo; update the existing vault docs in the defined Nova folder structure.
 
 ## Positioning
 
@@ -26,6 +26,7 @@ Treat those docs as the source of product intent and planning context. Treat the
 - The core promise is precise, in-place editing inside Obsidian.
 - Privacy-first and local-first are central to the product, not side benefits.
 - Deterministic local writing analysis strengthens the "help you write better" story because it works offline and does not require API calls.
+- The current roadmap direction is "Hemingway inside Obsidian": local issue detection and navigation first, then safe guided revision.
 
 ## Strategic Priorities
 
@@ -39,6 +40,7 @@ When brainstorming or evaluating features, prefer ideas that:
 
 - reinforce editor-not-generator positioning
 - feel native to Obsidian instead of bolted on
+- keep adjacent Nova panes visually unified instead of introducing one-off surfaces
 - preserve privacy and local-first trust
 - create visible, screenshotable, or habit-forming value
 - build reusable infrastructure for later premium features
@@ -66,6 +68,8 @@ Roadmap items after v1.4 are planned work, not shipped functionality. In particu
 
 - Favor extensions of existing strengths over unrelated surface area.
 - A premium feature should feel materially more actionable, not just more diagnostic.
+- Do not position single-issue AI linter fixes as the paid value; Nova already has rich context menu editing for selected text.
+- Prefer Supernova value that is clearly different from existing selection-based edits; v1.7 Revision Mode is a cleaner gate than forcing guided revision into v1.6.
 - Free features can be strategically valuable when they improve adoption, delight, and word-of-mouth without adding marginal API cost.
 - Features that compound the writing-analysis system are especially attractive because they support Nova's differentiation and can feed later AI-assisted workflows.
 
@@ -84,3 +88,19 @@ Questions worth pressure-testing during planning:
 - Is the score motivating, or will it feel judgmental or noisy?
 - Does the scan/caching model stay responsive in larger vaults?
 - Are command names and UI labels kept in sentence case even if draft specs use title case?
+
+## v1.6 Prose Linter Notes
+
+The active product direction frames v1.6 as an all-free Hemingway-style issue workflow:
+
+- list, explain, filter, and jump to local writing-analysis findings
+- expand from a simple issue list into a local clarity workbench
+- add Hemingway-class checks plus practical ProWritingAid-style reports where they are deterministic and low-noise
+- support Markdown-aware analysis, General prose thresholds, a prioritized fix queue, and visible progress after edits
+- retire margin indicators as a general writing-suggestion feature
+- keep explicit Smart Fill marker affordances
+- move useful legacy prose heuristics into the linter only if they are explainable and low-noise
+- treat performance, privacy, and accessibility as part of the feature promise: no synchronous deep reports while typing, bounded issue rendering, stale-result guards, cleanup for pending work, no note-content logging or persistence, and keyboard/mobile-friendly controls
+- keep the initial v1.6 launch list tight: very long sentences, long sentences, passive voice, adverbs, weak intensifiers, qualifiers, complex words, and repeated words/phrases. Sticky sentences and sentence-start repetition are "ship only if clean"; sentence variety and transition usage belong in v1.6.x unless nearly free.
+
+Do not force a Supernova feature into v1.6. Guided AI revision is too close to selecting all text and running Improve Writing unless it has a full review model. The clearer paid step is v1.7 Revision Mode: AI track changes with accept/reject control. v1.8 Voice Match can then layer personalization onto that revision workflow.

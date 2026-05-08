@@ -14,9 +14,15 @@ Vault-wide writing quality scores with a composite score across four pillars —
 
 All local, zero AI costs, free for all users.
 
+### Prose Linter
+
+Hemingway-style clarity review inside your current note. Open it from the command palette and it appears in its own right-side review pane, styled like Nova's sidebar. Nova flags long and very long sentences, passive voice, adverbs, weak intensifiers, qualifiers, complex words, repeated words, and repeated phrases. Rows jump to the exact issue; safe local replacements appear only when Nova can verify the current text still matches.
+
+Prose Linter is free, local, Markdown-aware, and does not require an account, API key, or Supernova license. It is not a grammar checker.
+
 ### Writing Analysis
 
-Readability score, sentence length highlighting, passive voice detection, adverb density, and weak intensifier detection — running locally with zero AI costs. Like having ProWritingAid built into Obsidian, alongside Nova's AI editing tools.
+Readability score, sentence length highlighting, passive voice detection, adverb density, and weak intensifier detection — running locally with zero AI costs. These signals power Nova's local writing workflow and the Prose Linter workbench.
 
 **Note:** Writing analysis is English-only. Non-English documents won't get useful results from these features. AI editing works in any language your model supports.
 
@@ -96,13 +102,13 @@ The plugin includes a "Supernova" tab in settings with information about support
 ## Roadmap
 
 **Recently shipped:**
+- Prose Linter (v1.6) — Free local clarity workbench for the current note in its own right-side review pane: Hemingway-style issue review, Markdown-aware analysis, safe local Apply actions, and jump-to-issue editing. No AI key or Supernova license required.
 - Writing Dashboard (v1.5) — Vault-wide writing quality scores, per-document breakdown, and historical trend tracking. Entirely local, free for all users.
 - Writing Analysis (v1.4) — Readability scoring, passive voice detection, sentence length highlighting, adverb density, and weak intensifier flagging. All local, zero API costs.
 - Auto-Context (v1.3) — Wikilink resolution, backlinks, and the Context Quick Panel.
 - Smart Fill (v1.2) — AI placeholders for structured documents. Now free for all users.
 
 **Coming next:**
-- Prose Linter (v1.6) — Actionable issue list with AI-powered fix suggestions. Detection free; AI fixes Supernova early access.
 - Revision Mode (v1.7) — AI-proposed edits shown as inline tracked changes. Accept or reject each change individually. Supernova early access.
 - Voice Match (v1.8) — Nova learns your writing style and matches it on every transformation. Supernova early access.
 

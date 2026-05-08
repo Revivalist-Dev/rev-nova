@@ -603,6 +603,16 @@ export class WritingDashboardView extends ItemView {
 			this.registerPseudoButton(documentButton, () => {
 				void this.app.workspace.openLinkText(summary.filePath, '');
 			});
+			const reviewButton = documentCell.createEl('button', {
+				cls: 'nova-writing-dashboard-review-button',
+				text: 'Review prose'
+			});
+			reviewButton.setAttribute('type', 'button');
+			reviewButton.setAttribute('aria-label', `Review prose in ${fileName}`);
+			this.registerDomEvent(reviewButton, 'click', (event: MouseEvent) => {
+				event.preventDefault();
+				void this.openNoteForReview(summary.filePath);
+			});
 
 			this.createMetricCell(rowEl, summary.wordCount.toLocaleString());
 			this.createMetricCell(
@@ -658,6 +668,16 @@ export class WritingDashboardView extends ItemView {
 			titleEl.setAttribute('aria-label', `Open ${fileName}`);
 			this.registerPseudoButton(titleEl, () => {
 				void this.app.workspace.openLinkText(summary.filePath, '');
+			});
+			const reviewButton = headerEl.createEl('button', {
+				cls: 'nova-writing-dashboard-review-button',
+				text: 'Review prose'
+			});
+			reviewButton.setAttribute('type', 'button');
+			reviewButton.setAttribute('aria-label', `Review prose in ${fileName}`);
+			this.registerDomEvent(reviewButton, 'click', (event: MouseEvent) => {
+				event.preventDefault();
+				void this.openNoteForReview(summary.filePath);
 			});
 
 			const metricsEl = cardEl.createDiv({ cls: 'nova-writing-dashboard-mobile-metrics' });
@@ -919,6 +939,11 @@ export class WritingDashboardView extends ItemView {
 		}
 
 		return fileNameFromPath.replace(/\.md$/i, '');
+	}
+
+	private async openNoteForReview(filePath: string): Promise<void> {
+		await this.app.workspace.openLinkText(filePath, '');
+		await this.plugin.activateProseLinter();
 	}
 
 	private updatePrimaryActionButton(): void {

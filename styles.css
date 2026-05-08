@@ -970,15 +970,19 @@
     color: var(--text-accent-hover);
 }
 
-/* Ensure Obsidian's workspace leaf constrains our sidebar height */
-.workspace-leaf-content[data-type="nova-sidebar"] {
+/* Ensure Obsidian's workspace leaves constrain Nova right-pane views */
+.workspace-leaf-content[data-type="nova-sidebar"],
+.workspace-leaf-content[data-type="nova-prose-linter"] {
+    --nova-panel-padding-x: var(--size-4-2);
+    --nova-panel-gap: var(--size-4-2);
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
 }
 
-.workspace-leaf-content[data-type="nova-sidebar"] > .view-content {
+.workspace-leaf-content[data-type="nova-sidebar"] > .view-content,
+.workspace-leaf-content[data-type="nova-prose-linter"] > .view-content {
     flex: 1;
     height: 100%;
     min-height: 0;
@@ -4211,39 +4215,72 @@
     color: var(--text-error);
 }
 
-.nova-writing-panel-actions {
+.nova-writing-panel-actions,
+.nova-prose-linter-controls,
+.nova-prose-linter-filters,
+.nova-prose-linter-categories,
+.nova-prose-linter-row-actions {
     display: flex;
-    gap: var(--size-4-2);
+    flex-wrap: wrap;
+    gap: var(--size-2-2);
     padding-top: var(--size-4-1);
 }
 
-.nova-writing-panel-button {
+.nova-writing-panel-button,
+.nova-prose-linter-button,
+.nova-prose-linter-filter,
+.nova-prose-linter-category,
+.nova-prose-linter-row-button,
+.nova-prose-linter-load-more,
+.nova-writing-dashboard-review-button {
     border: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary);
+    background: var(--background-primary);
     color: var(--text-normal);
     border-radius: var(--radius-s);
-    padding: 6px 10px;
+    padding: 4px 8px;
     font-size: var(--font-smallest);
     cursor: pointer;
-    min-width: 120px;
+    min-width: 0;
+    min-height: 28px;
     text-align: center;
+    line-height: 1.2;
 }
 
-.nova-writing-panel-button:hover {
+.nova-writing-panel-button {
+    flex: 1 1 96px;
+}
+
+.nova-writing-panel-button:hover,
+.nova-prose-linter-button:hover,
+.nova-prose-linter-filter:hover,
+.nova-prose-linter-category:hover,
+.nova-prose-linter-row-button:hover,
+.nova-prose-linter-load-more:hover,
+.nova-writing-dashboard-review-button:hover {
     background: var(--background-modifier-hover);
 }
 
-.nova-writing-panel-button.nova-writing-panel-button--primary {
+.nova-writing-panel-button.nova-writing-panel-button--primary,
+.nova-prose-linter-button--primary,
+.nova-prose-linter-row-button--primary {
     background: var(--interactive-accent);
     color: var(--text-on-accent);
     border-color: var(--interactive-accent);
 }
 
-.nova-writing-panel-button.nova-writing-panel-button--primary:hover {
+.nova-writing-panel-button.nova-writing-panel-button--primary:hover,
+.nova-prose-linter-button--primary:hover,
+.nova-prose-linter-row-button--primary:hover {
     background: var(--interactive-accent-hover);
 }
 
-.nova-writing-panel-button:focus-visible {
+.nova-writing-panel-button:focus-visible,
+.nova-prose-linter-button:focus-visible,
+.nova-prose-linter-filter:focus-visible,
+.nova-prose-linter-category:focus-visible,
+.nova-prose-linter-row-button:focus-visible,
+.nova-prose-linter-load-more:focus-visible,
+.nova-writing-dashboard-review-button:focus-visible {
     outline: 2px solid var(--interactive-accent);
     outline-offset: 2px;
 }
@@ -4252,6 +4289,287 @@
     color: var(--text-faint);
     font-size: var(--font-smallest);
     padding: var(--size-4-2) 0;
+}
+
+.nova-prose-linter-view {
+    --nova-prose-linter-red: rgb(218, 82, 82);
+    --nova-prose-linter-yellow: rgb(194, 146, 21);
+    --nova-prose-linter-green: rgb(78, 143, 67);
+    --nova-prose-linter-blue: rgb(40, 142, 199);
+    --nova-prose-linter-purple: rgb(126, 91, 203);
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 0 var(--size-4-2);
+    overflow-y: auto;
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.nova-prose-linter-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-1);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex-shrink: 0;
+    padding: var(--size-4-2);
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+}
+
+.nova-prose-linter-brand {
+    color: var(--interactive-accent);
+    font-size: var(--font-smallest);
+    font-weight: var(--font-medium);
+    line-height: 1.2;
+}
+
+.nova-prose-linter-title {
+    margin: 0;
+    color: var(--text-normal);
+    font-size: var(--font-ui-medium);
+    font-weight: var(--font-medium);
+    line-height: 1.2;
+}
+
+.nova-prose-linter-status,
+.nova-prose-linter-empty,
+.nova-prose-linter-summary-empty {
+    color: var(--text-muted);
+    font-size: var(--font-smallest);
+    line-height: 1.35;
+}
+
+.nova-prose-linter-summary-empty {
+    padding: var(--size-4-2);
+}
+
+.nova-prose-linter-status,
+.nova-prose-linter-empty,
+.nova-prose-linter-list,
+.nova-prose-linter-controls,
+.nova-prose-linter-filters,
+.nova-prose-linter-categories {
+    margin-right: var(--nova-panel-padding-x);
+    margin-left: var(--nova-panel-padding-x);
+}
+
+.nova-prose-linter-controls,
+.nova-prose-linter-filters,
+.nova-prose-linter-categories,
+.nova-prose-linter-list,
+.nova-prose-linter-status,
+.nova-prose-linter-empty {
+    margin-top: var(--size-4-2);
+}
+
+.nova-prose-linter-summary {
+    margin: var(--size-4-1) var(--nova-panel-padding-x) 0;
+}
+
+.nova-prose-linter-readout {
+    color: var(--text-muted);
+    font-size: var(--font-smallest);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.nova-prose-linter-button {
+    flex: 1 1 calc(50% - var(--size-2-2));
+}
+
+.nova-prose-linter-filter {
+    flex: 0 1 auto;
+    min-height: 26px;
+    color: var(--text-muted);
+}
+
+.nova-prose-linter-categories {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--size-2-2);
+}
+
+.nova-prose-linter-category {
+    --nova-prose-linter-row-accent: var(--text-muted);
+    --nova-prose-linter-row-border: var(--background-modifier-border);
+    --nova-prose-linter-row-background: var(--background-primary);
+    --nova-prose-linter-category-background: color-mix(in srgb, var(--nova-prose-linter-row-accent) 76%, var(--text-normal));
+    --nova-prose-linter-category-background-hover: color-mix(in srgb, var(--nova-prose-linter-row-accent) 84%, var(--text-normal));
+    --nova-prose-linter-category-foreground: #ffffff;
+    --nova-prose-linter-category-count-background: color-mix(in srgb, var(--background-primary) 24%, transparent);
+}
+
+button.nova-prose-linter-category {
+    align-items: center;
+    appearance: none;
+    min-width: 0;
+    border-color: transparent;
+    background: var(--nova-prose-linter-category-background) !important;
+    background-color: var(--nova-prose-linter-category-background) !important;
+    box-shadow: none;
+    display: flex;
+    justify-content: flex-start;
+    gap: var(--size-2-2);
+    width: 100%;
+    padding: var(--size-4-1) var(--size-4-2);
+    text-align: left;
+    white-space: normal;
+}
+
+.nova-prose-linter-category-count {
+    flex: 0 0 auto;
+    min-width: 22px;
+    border-radius: var(--radius-s);
+    background: var(--nova-prose-linter-category-count-background);
+    color: var(--nova-prose-linter-category-foreground);
+    font-size: var(--font-smallest);
+    font-weight: var(--font-semibold);
+    line-height: 1.3;
+    padding: 1px var(--size-2-1);
+    text-align: center;
+}
+
+.nova-prose-linter-category-label {
+    color: var(--nova-prose-linter-category-foreground);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-medium);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.nova-prose-linter-category--muted {
+    opacity: 0.55;
+}
+
+button.nova-prose-linter-category:hover {
+    border-color: transparent;
+    background: var(--nova-prose-linter-category-background-hover) !important;
+    background-color: var(--nova-prose-linter-category-background-hover) !important;
+}
+
+.nova-prose-linter-row-button {
+    flex: 0 1 auto;
+}
+
+.nova-prose-linter-filter--muted {
+    color: var(--text-faint);
+    background: var(--background-secondary);
+}
+
+.nova-prose-linter-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-2);
+}
+
+.nova-prose-linter-row {
+    --nova-prose-linter-row-accent: var(--text-muted);
+    --nova-prose-linter-row-border: var(--background-modifier-border);
+    --nova-prose-linter-row-background: var(--background-primary);
+    border: 1px solid var(--nova-prose-linter-row-border);
+    border-left-width: 4px;
+    border-left-color: var(--nova-prose-linter-row-accent);
+    border-radius: var(--radius-s);
+    background: var(--nova-prose-linter-row-background);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-1);
+    padding: var(--size-4-2);
+}
+
+.nova-prose-linter-row--selected {
+    border-color: var(--nova-prose-linter-row-border);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.nova-prose-linter-row--very-long-sentence {
+    --nova-prose-linter-row-accent: var(--nova-prose-linter-red);
+    --nova-prose-linter-row-border: color-mix(in srgb, var(--nova-prose-linter-red) 38%, var(--background-modifier-border));
+    --nova-prose-linter-row-background: color-mix(in srgb, var(--nova-prose-linter-red) 10%, var(--background-primary));
+}
+
+.nova-prose-linter-row--long-sentence,
+.nova-prose-linter-row--repeated-word,
+.nova-prose-linter-row--repeated-phrase,
+.nova-prose-linter-row--sticky-sentence,
+.nova-prose-linter-row--sentence-start {
+    --nova-prose-linter-row-accent: var(--nova-prose-linter-yellow);
+    --nova-prose-linter-row-border: color-mix(in srgb, var(--nova-prose-linter-yellow) 40%, var(--background-modifier-border));
+    --nova-prose-linter-row-background: color-mix(in srgb, var(--nova-prose-linter-yellow) 12%, var(--background-primary));
+}
+
+.nova-prose-linter-row--passive-voice {
+    --nova-prose-linter-row-accent: var(--nova-prose-linter-green);
+    --nova-prose-linter-row-border: color-mix(in srgb, var(--nova-prose-linter-green) 38%, var(--background-modifier-border));
+    --nova-prose-linter-row-background: color-mix(in srgb, var(--nova-prose-linter-green) 10%, var(--background-primary));
+}
+
+.nova-prose-linter-row--adverb,
+.nova-prose-linter-row--weak-intensifier,
+.nova-prose-linter-row--qualifier,
+.nova-prose-linter-row--telling-language {
+    --nova-prose-linter-row-accent: var(--nova-prose-linter-blue);
+    --nova-prose-linter-row-border: color-mix(in srgb, var(--nova-prose-linter-blue) 38%, var(--background-modifier-border));
+    --nova-prose-linter-row-background: color-mix(in srgb, var(--nova-prose-linter-blue) 10%, var(--background-primary));
+}
+
+.nova-prose-linter-row--complex-word {
+    --nova-prose-linter-row-accent: var(--nova-prose-linter-purple);
+    --nova-prose-linter-row-border: color-mix(in srgb, var(--nova-prose-linter-purple) 38%, var(--background-modifier-border));
+    --nova-prose-linter-row-background: color-mix(in srgb, var(--nova-prose-linter-purple) 10%, var(--background-primary));
+}
+
+.nova-prose-linter-row-label {
+    color: var(--nova-prose-linter-row-accent);
+}
+
+.nova-prose-linter-row-label {
+    font-size: var(--font-smallest);
+    font-weight: var(--font-medium);
+}
+
+.nova-prose-linter-row-excerpt {
+    color: var(--text-normal);
+    font-size: var(--font-smallest);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.nova-prose-linter-row-explanation,
+.nova-prose-linter-row-suggestion {
+    color: var(--text-muted);
+    font-size: var(--font-smallest);
+    line-height: 1.35;
+}
+
+@media (max-width: 700px) {
+    .nova-prose-linter-view {
+        --nova-panel-padding-x: var(--size-4-2);
+    }
+
+    .nova-prose-linter-button,
+    .nova-prose-linter-row-button,
+    .nova-prose-linter-load-more {
+        flex: 1 1 96px;
+    }
+}
+
+@container (min-width: 420px) {
+    .nova-prose-linter-categories {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@container (max-width: 260px) {
+    .nova-prose-linter-categories {
+        grid-template-columns: 1fr;
+    }
 }
 
 .nova-settings-textarea {
@@ -4716,6 +5034,20 @@
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+}
+
+.nova-writing-dashboard-table td:first-child {
+    min-width: 220px;
+}
+
+.nova-writing-dashboard-review-button {
+    margin-left: var(--size-4-2);
+    white-space: nowrap;
+}
+
+.nova-writing-dashboard-mobile-header .nova-writing-dashboard-review-button {
+    flex: 0 0 auto;
+    margin-left: 0;
 }
 
 .nova-writing-dashboard-sort-button:hover,

@@ -2,10 +2,12 @@
  * @file WritingAnalysisManager - Coordinates deterministic writing analysis for the active Markdown editor
  */
 
-import { MarkdownView, TFile } from 'obsidian';
+import { Editor, MarkdownView, TFile } from 'obsidian';
 import { EditorView } from '@codemirror/view';
-import { analyzeWriting, hasWritingAnalysisOptOut, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
+import { analyzeWriting, hashContent, hasWritingAnalysisOptOut, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
+import { createAnalysisRunToken, isStaleAnalysisRun, type AnalysisRunToken } from '../core/writing-analysis-runner';
 import { CodeMirrorWritingHighlightManager, type WritingHighlight } from '../features/commands/ui/codemirror-decorations';
+import { PROSE_ISSUE_LABELS, type ProseIssue } from '../features/prose-linter/prose-linter-types';
 import { VIEW_TYPE_NOVA_SIDEBAR } from '../constants';
 import { VIEW_TYPE_WRITING_DASHBOARD } from './writing-dashboard-view';
 import { Logger } from '../utils/logger';
@@ -20,6 +22,7 @@ export interface WritingAnalysisUpdateDetail {
     eligible: boolean;
     highlightsVisible: boolean;
     disabledByFrontmatter: boolean;
+    runToken: AnalysisRunToken;
 }
 
 export class WritingAnalysisManager {
@@ -41,6 +44,11 @@ export class WritingAnalysisManager {
     private pendingAnalysisTimeout: number | null = null;
     private pendingIdleHandle: number | null = null;
     private currentLeafViewType: string | null = null;
+    private analysisSequence = 0;
+    private activeRunToken: AnalysisRunToken = createAnalysisRunToken(null, '', 0);
+    private proseLinterHighlights: WritingHighlight[] | null = null;
+    private proseLinterHighlightFilePath: string | null = null;
+    private proseLinterHighlightContentHash: string | null = null;
 
     constructor(plugin: NovaPlugin) {
         this.plugin = plugin;
@@ -77,6 +85,7 @@ export class WritingAnalysisManager {
             this.highlightManager = null;
             this.latestAnalysis = null;
             this.disabledByFrontmatter = false;
+            this.invalidateAnalysisRun(null);
             this.clearHighlights();
             this.emitUpdate(false);
             return;
@@ -99,6 +108,7 @@ export class WritingAnalysisManager {
         if (!this.plugin.settings.writingAnalysis.enabled) {
             this.latestAnalysis = null;
             this.disabledByFrontmatter = false;
+            this.invalidateAnalysisRun(this.activeView?.file?.path ?? null);
             this.clearHighlights();
             this.emitUpdate(this.isEligibleView(this.activeView));
             return;
@@ -157,6 +167,14 @@ export class WritingAnalysisManager {
         return this.activeView?.file ?? null;
     }
 
+    getActiveEditor(): Editor | null {
+        return this.activeView?.editor ?? null;
+    }
+
+    getActiveContent(): string | null {
+        return this.activeView?.editor?.getValue() ?? null;
+    }
+
     isEligibleActiveFile(): boolean {
         return this.isEligibleView(this.activeView);
     }
@@ -167,6 +185,39 @@ export class WritingAnalysisManager {
 
     isDisabledByFrontmatter(): boolean {
         return this.disabledByFrontmatter;
+    }
+
+    getActiveRunToken(): AnalysisRunToken {
+        return this.activeRunToken;
+    }
+
+    setProseLinterIssues(filePath: string, contentHash: string, issues: ProseIssue[]): void {
+        if (!this.isCurrentProseLinterTarget(filePath, contentHash)) {
+            return;
+        }
+
+        this.proseLinterHighlights = issues
+            .map(issue => this.createHighlight(
+                issue.line,
+                issue.startCh,
+                issue.endCh,
+                issue.type,
+                `${PROSE_ISSUE_LABELS[issue.type]}: ${issue.suggestion}`
+            ))
+            .filter((highlight): highlight is WritingHighlight => Boolean(highlight));
+        this.proseLinterHighlightFilePath = filePath;
+        this.proseLinterHighlightContentHash = contentHash;
+        this.applyHighlights();
+    }
+
+    clearProseLinterHighlights(filePath?: string): void {
+        if (filePath && this.proseLinterHighlightFilePath && this.proseLinterHighlightFilePath !== filePath) {
+            return;
+        }
+        this.proseLinterHighlights = null;
+        this.proseLinterHighlightFilePath = null;
+        this.proseLinterHighlightContentHash = null;
+        this.applyHighlights();
     }
 
     setHighlightsVisible(visible: boolean): void {
@@ -183,15 +234,21 @@ export class WritingAnalysisManager {
             this.pendingIdleHandle = null;
         }
         this.clearHighlights();
+        this.proseLinterHighlights = null;
+        this.proseLinterHighlightFilePath = null;
+        this.proseLinterHighlightContentHash = null;
         this.activeView = null;
         this.highlightManager = null;
         this.latestAnalysis = null;
+        this.invalidateAnalysisRun(null);
     }
 
     private async runAnalysis(): Promise<void> {
         if (!this.plugin.settings.writingAnalysis.enabled || !this.isEligibleView(this.activeView)) {
             this.latestAnalysis = null;
             this.disabledByFrontmatter = false;
+            this.invalidateAnalysisRun(this.activeView?.file?.path ?? null);
+            this.clearProseLinterHighlights(this.activeView?.file?.path);
             this.clearHighlights();
             this.emitUpdate(false);
             return;
@@ -202,16 +259,24 @@ export class WritingAnalysisManager {
             const file = activeView.file;
             if (!file) {
                 this.latestAnalysis = null;
+                this.invalidateAnalysisRun(null);
                 this.clearHighlights();
                 this.emitUpdate(false);
                 return;
             }
+            const runStartToken = this.startAnalysisRun(file.path);
 
             const content = activeView.editor?.getValue() ?? await this.plugin.app.vault.cachedRead(file);
+            const candidateToken = createAnalysisRunToken(file.path, hashContent(content), runStartToken.sequence);
+            this.clearStaleProseLinterHighlights(candidateToken);
+            if (this.isCandidateRunStale(candidateToken, content)) {
+                return;
+            }
 
             this.disabledByFrontmatter = hasWritingAnalysisOptOut(content);
             if (this.disabledByFrontmatter) {
                 this.latestAnalysis = null;
+                this.activeRunToken = candidateToken;
                 this.clearHighlights();
                 this.emitUpdate(true);
                 return;
@@ -221,7 +286,11 @@ export class WritingAnalysisManager {
                 longSentenceThreshold: this.plugin.settings.writingAnalysis.longSentenceThreshold,
                 veryLongSentenceThreshold: this.plugin.settings.writingAnalysis.veryLongSentenceThreshold
             });
+            if (this.isCandidateRunStale(candidateToken, content)) {
+                return;
+            }
 
+            this.activeRunToken = candidateToken;
             this.applyHighlights();
             this.emitUpdate(true);
         } catch (error) {
@@ -236,13 +305,25 @@ export class WritingAnalysisManager {
                 filePath: this.activeView?.file?.path ?? null,
                 eligible,
                 highlightsVisible: this.highlightsVisible,
-                disabledByFrontmatter: this.disabledByFrontmatter
+                disabledByFrontmatter: this.disabledByFrontmatter,
+                runToken: this.activeRunToken
             } satisfies WritingAnalysisUpdateDetail
         }));
     }
 
     private applyHighlights(): void {
-        if (!this.highlightManager || !this.latestAnalysis || !this.highlightsVisible) {
+        if (!this.highlightManager || !this.highlightsVisible) {
+            this.clearHighlights();
+            return;
+        }
+
+        const proseLinterHighlights = this.getCurrentProseLinterHighlights();
+        if (proseLinterHighlights) {
+            this.highlightManager.updateHighlights(proseLinterHighlights);
+            return;
+        }
+
+        if (!this.latestAnalysis) {
             this.clearHighlights();
             return;
         }
@@ -358,6 +439,47 @@ export class WritingAnalysisManager {
         this.highlightManager?.clearHighlights();
     }
 
+    private getCurrentProseLinterHighlights(): WritingHighlight[] | null {
+        if (!this.proseLinterHighlights) {
+            return null;
+        }
+
+        const activeFilePath = this.activeView?.file?.path ?? null;
+        const activeContent = this.activeView?.editor?.getValue() ?? null;
+        if (
+            !activeContent ||
+            activeFilePath !== this.proseLinterHighlightFilePath ||
+            hashContent(activeContent) !== this.proseLinterHighlightContentHash
+        ) {
+            this.proseLinterHighlights = null;
+            this.proseLinterHighlightFilePath = null;
+            this.proseLinterHighlightContentHash = null;
+            return null;
+        }
+
+        return this.proseLinterHighlights;
+    }
+
+    private clearStaleProseLinterHighlights(candidateToken: AnalysisRunToken): void {
+        if (
+            this.proseLinterHighlights &&
+            (
+                this.proseLinterHighlightFilePath !== candidateToken.filePath ||
+                this.proseLinterHighlightContentHash !== candidateToken.contentHash
+            )
+        ) {
+            this.proseLinterHighlights = null;
+            this.proseLinterHighlightFilePath = null;
+            this.proseLinterHighlightContentHash = null;
+        }
+    }
+
+    private isCurrentProseLinterTarget(filePath: string, contentHash: string): boolean {
+        const activeFilePath = this.activeView?.file?.path ?? null;
+        const activeContent = this.activeView?.editor?.getValue() ?? null;
+        return Boolean(activeContent && activeFilePath === filePath && hashContent(activeContent) === contentHash);
+    }
+
     private setupHighlightManager(): void {
         const cm = this.getEditorView();
         if (!cm) {
@@ -402,6 +524,24 @@ export class WritingAnalysisManager {
         // graph, Nova sidebar, etc.). Only clear when switching to the writing
         // dashboard, which has its own analysis display.
         return this.currentLeafViewType !== VIEW_TYPE_WRITING_DASHBOARD;
+    }
+
+    private startAnalysisRun(filePath: string | null): AnalysisRunToken {
+        this.analysisSequence++;
+        this.activeRunToken = createAnalysisRunToken(filePath, '', this.analysisSequence);
+        return this.activeRunToken;
+    }
+
+    private invalidateAnalysisRun(filePath: string | null): void {
+        this.analysisSequence++;
+        this.activeRunToken = createAnalysisRunToken(filePath, '', this.analysisSequence);
+    }
+
+    private isCandidateRunStale(candidateToken: AnalysisRunToken, candidateContent: string): boolean {
+        const currentFilePath = this.activeView?.file?.path ?? null;
+        const currentContent = this.activeView?.editor?.getValue() ?? candidateContent;
+        const currentToken = createAnalysisRunToken(currentFilePath, hashContent(currentContent), this.analysisSequence);
+        return isStaleAnalysisRun(currentToken, candidateToken);
     }
 }
 

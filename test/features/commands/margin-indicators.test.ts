@@ -139,72 +139,9 @@ describe('MarginIndicators', () => {
     });
 
     describe('Opportunity Detection', () => {
-        describe('Enhancement Opportunities', () => {
-            test('should detect bullet points as enhancement opportunities', async () => {
-                const testLines = [
-                    '- This is a bullet point',
-                    '* Another bullet point',
-                    '+ Third bullet style'
-                ];
-
-                const context = mockVariableResolver.buildSmartContext();
-                
-                for (const line of testLines) {
-                    const shouldShow = (marginIndicators as any).shouldShowEnhancementIndicators(context, line);
-                    expect(shouldShow).toBe(true);
-                }
-            });
-
-            test('should detect weak language as enhancement opportunities', async () => {
-                const testLines = [
-                    'I think this might work',
-                    'Maybe we should consider this',
-                    'Perhaps this is the answer'
-                ];
-
-                const context = mockVariableResolver.buildSmartContext();
-                
-                for (const line of testLines) {
-                    const shouldShow = (marginIndicators as any).shouldShowEnhancementIndicators(context, line);
-                    expect(shouldShow).toBe(true);
-                }
-            });
-
-            test('should NOT detect headers as enhancement opportunities', async () => {
-                const testLines = [
-                    '# Main Header',
-                    '## Secondary Header',
-                    '### Third Level Header',
-                    '#### Fourth Level Header'
-                ];
-
-                const context = mockVariableResolver.buildSmartContext();
-                
-                for (const line of testLines) {
-                    const shouldShow = (marginIndicators as any).shouldShowEnhancementIndicators(context, line);
-                    expect(shouldShow).toBe(false);
-                }
-            });
-
-            test('should NOT detect normal prose as enhancement opportunities', async () => {
-                const testLines = [
-                    'This is a normal sentence with good content.',
-                    'Here is another well-written paragraph with substance.',
-                    'Regular prose should not trigger enhancement indicators.'
-                ];
-
-                const context = mockVariableResolver.buildSmartContext();
-                
-                for (const line of testLines) {
-                    const shouldShow = (marginIndicators as any).shouldShowEnhancementIndicators(context, line);
-                    expect(shouldShow).toBe(false);
-                }
-            });
-        });
-
-        describe('Transform Opportunities', () => {
-            test('should detect "telling" language', async () => {
-                const testLines = [
+        describe('Retired prose suggestions', () => {
+            test('does not produce legacy transform hints for telling-language words', async () => {
+                const testDocument = [
                     'She felt sad when she heard the news',
                     'He thought about the problem carefully',
                     'They believed the solution would work',
@@ -212,49 +149,18 @@ describe('MarginIndicators', () => {
                     'She realized the truth about the situation'
                 ];
 
-                const context = mockVariableResolver.buildSmartContext();
-                
-                for (const line of testLines) {
-                    const shouldShow = (marginIndicators as any).shouldShowTransformIndicators(context, line);
-                    expect(shouldShow).toBe(true);
-                }
-            });
+                mockEditor.getLine.mockImplementation((lineNum: number) => testDocument[lineNum] || '');
+                mockEditor.lineCount.mockReturnValue(testDocument.length);
+                (marginIndicators as any).activeEditor = mockEditor;
+                (marginIndicators as any).activeView = mockView;
+                (marginIndicators as any).getVisibleLineRange = jest.fn().mockReturnValue({
+                    from: 0,
+                    to: testDocument.length - 1
+                });
 
-            test('should NOT detect action-based writing', async () => {
-                const testLines = [
-                    'She slammed the door and walked away',
-                    'The rain pounded against the windows',
-                    'He picked up the phone and dialed the number'
-                ];
+                const opportunities = (marginIndicators as any).findOpportunities(mockVariableResolver.buildSmartContext());
 
-                const context = mockVariableResolver.buildSmartContext();
-                
-                for (const line of testLines) {
-                    const shouldShow = (marginIndicators as any).shouldShowTransformIndicators(context, line);
-                    expect(shouldShow).toBe(false);
-                }
-            });
-        });
-
-        describe('Metrics Opportunities', () => {
-            test('should show metrics for documents over 500 words', async () => {
-                const context = {
-                    ...mockVariableResolver.buildSmartContext(),
-                    metrics: { wordCount: 750 }
-                };
-
-                const shouldShow = (marginIndicators as any).shouldShowMetricsIndicators(context);
-                expect(shouldShow).toBe(true);
-            });
-
-            test('should NOT show metrics for short documents', async () => {
-                const context = {
-                    ...mockVariableResolver.buildSmartContext(),
-                    metrics: { wordCount: 250 }
-                };
-
-                const shouldShow = (marginIndicators as any).shouldShowMetricsIndicators(context);
-                expect(shouldShow).toBe(false);
+                expect(opportunities.filter((opportunity: any) => opportunity.icon === '✨')).toEqual([]);
             });
         });
 
@@ -264,11 +170,14 @@ describe('MarginIndicators', () => {
                 const context = mockVariableResolver.buildSmartContext();
                 
                 for (const line of testLines) {
-                    const enhancementShow = (marginIndicators as any).shouldShowEnhancementIndicators(context, line);
-                    const transformShow = (marginIndicators as any).shouldShowTransformIndicators(context, line);
+                    mockEditor.getLine.mockReturnValue(line);
+                    mockEditor.lineCount.mockReturnValue(1);
+                    (marginIndicators as any).activeEditor = mockEditor;
+                    (marginIndicators as any).activeView = mockView;
+                    (marginIndicators as any).getVisibleLineRange = jest.fn().mockReturnValue({ from: 0, to: 0 });
+                    const opportunities = (marginIndicators as any).findOpportunities(context);
 
-                    expect(enhancementShow).toBe(false);
-                    expect(transformShow).toBe(false);
+                    expect(opportunities).toEqual([]);
                 }
             });
 
@@ -276,9 +185,12 @@ describe('MarginIndicators', () => {
                 const longLine = 'This is a very long line that exceeds normal paragraph length and should be handled appropriately by the detection system without causing performance issues or false positives in the analysis engine.';
                 const context = mockVariableResolver.buildSmartContext();
                 
-                // Should not trigger just because it's long
-                const shouldShow = (marginIndicators as any).shouldShowEnhancementIndicators(context, longLine);
-                expect(shouldShow).toBe(false);
+                mockEditor.getLine.mockReturnValue(longLine);
+                mockEditor.lineCount.mockReturnValue(1);
+                (marginIndicators as any).activeEditor = mockEditor;
+                (marginIndicators as any).activeView = mockView;
+                (marginIndicators as any).getVisibleLineRange = jest.fn().mockReturnValue({ from: 0, to: 0 });
+                expect((marginIndicators as any).findOpportunities(context)).toEqual([]);
             });
         });
     });
@@ -389,17 +301,8 @@ describe('MarginIndicators', () => {
             }
         });
 
-        test('should generate consistent hashes for same content', () => {
-            const line1 = 'This is a test line';
-            const line2 = 'This is a test line';
-            const line3 = 'This is a different line';
-
-            const hash1 = (marginIndicators as any).hashLine(line1);
-            const hash2 = (marginIndicators as any).hashLine(line2);
-            const hash3 = (marginIndicators as any).hashLine(line3);
-
-            expect(hash1).toBe(hash2);
-            expect(hash1).not.toBe(hash3);
+        test('clearAnalysisCache remains a no-op compatibility method', () => {
+            expect(() => marginIndicators.clearAnalysisCache()).not.toThrow();
         });
     });
 
@@ -426,19 +329,9 @@ describe('MarginIndicators', () => {
 
             const context = mockVariableResolver.buildSmartContext();
             
-            // Test individual line detection to verify logic works
-            const line2Result = (marginIndicators as any).shouldShowEnhancementIndicators(context, testDocument[2]); // Bullet
-            const line6Result = (marginIndicators as any).shouldShowEnhancementIndicators(context, testDocument[6]); // I think
-            const line7Result = (marginIndicators as any).shouldShowTransformIndicators(context, testDocument[7]); // felt
+            const opportunities = (marginIndicators as any).findOpportunities(context);
 
-            // Verify individual detections work
-            expect(line2Result).toBe(true); // Bullet point should be detected
-            expect(line6Result).toBe(true); // "I think" should be detected
-            expect(line7Result).toBe(true); // "felt" should be detected
-            
-            // Test that headers are properly skipped
-            const headerResult = (marginIndicators as any).shouldShowEnhancementIndicators(context, testDocument[0]);
-            expect(headerResult).toBe(false);
+            expect(opportunities).toEqual([]);
         });
 
         test('should correctly count and position indicators for exact test document', async () => {
@@ -477,37 +370,11 @@ describe('MarginIndicators', () => {
             const opportunities = (marginIndicators as any).findOpportunities(context);
             
             // Analyze each line that should have opportunities
-            const expectedLines = [2, 3, 5, 9];
-            let detectedOpportunitiesByLine: Record<number, string[]> = {};
-            
-            for (const line of expectedLines) {
-                detectedOpportunitiesByLine[line] = [];
-                
-                // Check each opportunity type for this line
-                if ((marginIndicators as any).shouldShowEnhancementIndicators(context, testDocument[line])) {
-                    detectedOpportunitiesByLine[line].push('enhancement');
-                }
-                if ((marginIndicators as any).shouldShowTransformIndicators(context, testDocument[line])) {
-                    detectedOpportunitiesByLine[line].push('transform');
-                }
-            }
-            
-            // Count total opportunities detected vs actual opportunities returned
-            let expectedOpportunityCount = 0;
-            for (const line in detectedOpportunitiesByLine) {
-                expectedOpportunityCount += detectedOpportunitiesByLine[line].length;
-            }
-            
             // Verify no opportunities beyond the content
             const maxContentLine = testDocument.length - 1;
             const invalidOpportunities = opportunities.filter((o: any) => o.line > maxContentLine);
             expect(invalidOpportunities.length).toBe(0);
-            
-            // Verify expected lines have opportunities
-            expect(detectedOpportunitiesByLine[2]).toContain('enhancement'); // First bullet
-            expect(detectedOpportunitiesByLine[3]).toContain('enhancement'); // Second bullet
-            expect(detectedOpportunitiesByLine[5].length).toBeGreaterThan(0); // "I think" line
-            expect(detectedOpportunitiesByLine[9]).toContain('transform'); // "felt sad"
+            expect(opportunities).toEqual([]);
         });
 
         test('should not create duplicate indicators for multi-issue lines', async () => {

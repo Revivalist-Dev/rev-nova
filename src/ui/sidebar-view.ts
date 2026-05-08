@@ -584,6 +584,9 @@ export class NovaSidebarView extends ItemView {
 					manager.setHighlightsVisible(true);
 				}
 				void manager?.analyzeNow();
+			},
+			onOpenProseLinter: () => {
+				void this.plugin.activateProseLinter();
 			}
 		});
 		const writingPanelEl = this.writingStatsPanel.createPanel();
@@ -1783,7 +1786,8 @@ USER REQUEST: ${processedMessage}`;
 			filePath: manager?.getActiveFile()?.path ?? null,
 			eligible: manager?.isEligibleActiveFile() ?? false,
 			highlightsVisible: manager?.isHighlightsVisible() ?? true,
-			disabledByFrontmatter: manager?.isDisabledByFrontmatter() ?? false
+			disabledByFrontmatter: manager?.isDisabledByFrontmatter() ?? false,
+			runToken: manager.getActiveRunToken()
 		};
 
 		this.writingStatsPanel.update({

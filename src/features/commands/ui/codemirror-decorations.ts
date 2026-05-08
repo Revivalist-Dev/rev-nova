@@ -24,7 +24,19 @@ interface IndicatorOpportunity {
 export interface WritingHighlight {
     from: number;
     to: number;
-    type: 'long-sentence' | 'very-long-sentence' | 'passive-voice' | 'adverb' | 'weak-intensifier';
+    type:
+        | 'long-sentence'
+        | 'very-long-sentence'
+        | 'passive-voice'
+        | 'adverb'
+        | 'weak-intensifier'
+        | 'qualifier'
+        | 'complex-word'
+        | 'repeated-word'
+        | 'repeated-phrase'
+        | 'sticky-sentence'
+        | 'sentence-start'
+        | 'telling-language';
     title: string;
 }
 
@@ -301,34 +313,41 @@ export function createIndicatorExtension(plugin: NovaPlugin) {
             },
 
             '.nova-writing-highlight': {
-                borderBottomWidth: '1px',
-                borderBottomStyle: 'solid',
-                cursor: 'help'
+                borderRadius: '2px',
+                cursor: 'help',
+                boxDecorationBreak: 'clone'
             },
 
             '.nova-writing-highlight--long-sentence': {
-                borderBottomColor: 'var(--text-warning)',
-                boxShadow: 'inset 0 -1px 0 0 color-mix(in srgb, var(--text-warning) 25%, transparent)'
+                backgroundColor: 'color-mix(in srgb, rgb(194, 146, 21) 28%, transparent)'
             },
 
             '.nova-writing-highlight--very-long-sentence': {
-                borderBottomColor: 'var(--text-error)',
-                boxShadow: 'inset 0 -1px 0 0 color-mix(in srgb, var(--text-error) 25%, transparent)'
+                backgroundColor: 'color-mix(in srgb, rgb(218, 82, 82) 28%, transparent)'
             },
 
             '.nova-writing-highlight--passive-voice': {
-                borderBottomColor: 'var(--interactive-accent)',
-                boxShadow: 'inset 0 -1px 0 0 color-mix(in srgb, var(--interactive-accent) 20%, transparent)'
+                backgroundColor: 'color-mix(in srgb, rgb(78, 143, 67) 25%, transparent)'
             },
 
             '.nova-writing-highlight--adverb': {
-                borderBottomColor: 'var(--text-accent)',
-                boxShadow: 'inset 0 -1px 0 0 color-mix(in srgb, var(--text-accent) 18%, transparent)'
+                backgroundColor: 'color-mix(in srgb, rgb(40, 142, 199) 24%, transparent)'
             },
 
             '.nova-writing-highlight--weak-intensifier': {
-                borderBottomColor: 'var(--color-orange)',
-                boxShadow: 'inset 0 -1px 0 0 color-mix(in srgb, var(--color-orange) 20%, transparent)'
+                backgroundColor: 'color-mix(in srgb, rgb(40, 142, 199) 24%, transparent)'
+            },
+
+            '.nova-writing-highlight--qualifier, .nova-writing-highlight--telling-language': {
+                backgroundColor: 'color-mix(in srgb, rgb(40, 142, 199) 24%, transparent)'
+            },
+
+            '.nova-writing-highlight--complex-word': {
+                backgroundColor: 'color-mix(in srgb, rgb(126, 91, 203) 24%, transparent)'
+            },
+
+            '.nova-writing-highlight--repeated-word, .nova-writing-highlight--repeated-phrase, .nova-writing-highlight--sticky-sentence, .nova-writing-highlight--sentence-start': {
+                backgroundColor: 'color-mix(in srgb, rgb(194, 146, 21) 28%, transparent)'
             }
         })
     ];

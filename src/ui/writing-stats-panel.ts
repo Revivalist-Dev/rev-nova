@@ -22,6 +22,7 @@ export interface WritingStatsPanelDeps {
     ) => void;
     onToggleHighlights: () => void;
     onAnalyze: () => void;
+    onOpenProseLinter: () => void;
 }
 
 export class WritingStatsPanel {
@@ -181,6 +182,13 @@ export class WritingStatsPanel {
         analyzeButton.setAttribute('type', 'button');
         analyzeButton.setAttribute('aria-label', 'Analyze writing now');
 
+        const linterButton = actionsEl.createEl('button', {
+            cls: 'nova-writing-panel-button',
+            text: 'Prose linter'
+        });
+        linterButton.setAttribute('type', 'button');
+        linterButton.setAttribute('aria-label', 'Open prose linter');
+
         this.deps.registerDomEvent(toggleButton, 'click', (event: MouseEvent) => {
             event.preventDefault();
             event.stopPropagation();
@@ -191,6 +199,12 @@ export class WritingStatsPanel {
             event.preventDefault();
             event.stopPropagation();
             this.deps.onAnalyze();
+        });
+
+        this.deps.registerDomEvent(linterButton, 'click', (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.deps.onOpenProseLinter();
         });
     }
 

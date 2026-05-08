@@ -2,6 +2,8 @@
  * @file WritingAnalysis - Deterministic writing quality analysis helpers
  */
 
+import { indexToPosition, normalizeMarkdownForWritingAnalysis, type LineInfo } from './writing-analysis-normalizer';
+
 export interface WritingAnalysis {
 	wordCount: number;
 	sentenceCount: number;
@@ -53,18 +55,6 @@ export interface WeakIntensifierMatch {
 export interface WritingAnalysisOptions {
 	longSentenceThreshold?: number;
 	veryLongSentenceThreshold?: number;
-}
-
-interface LineInfo {
-	text: string;
-	start: number;
-	length: number;
-}
-
-interface FrontmatterInfo {
-	startLine: number;
-	endLine: number;
-	optOut: boolean;
 }
 
 const DEFAULT_LONG_SENTENCE_THRESHOLD = 25;
@@ -192,34 +182,24 @@ export function analyzeWriting(content: string, options: WritingAnalysisOptions 
 		return lastCachedAnalysis;
 	}
 
-	const lines = content.split('\n');
-	const lineInfos = buildLineInfos(lines);
-	const frontmatter = detectFrontmatter(lines);
-	if (frontmatter?.optOut) {
+	const normalized = normalizeMarkdownForWritingAnalysis(content);
+	if (normalized.optOut) {
 		const noOp = createNoOpAnalysis('Analysis disabled by frontmatter');
 		lastCacheKey = cacheKey;
 		lastCachedAnalysis = noOp;
 		return noOp;
 	}
 
-	const normalizedLines = lines.map((line) => line);
-	const quoteLineFlags = new Array<boolean>(lines.length).fill(false);
-
-	blankFrontmatter(normalizedLines, frontmatter);
-	blankFencedCodeBlocks(normalizedLines);
-	blankInlineCode(normalizedLines);
-	markBlockquotes(normalizedLines, quoteLineFlags);
-
-	const normalizedContent = normalizedLines.join('\n');
-	const sentenceSpans = splitSentences(normalizedContent, lineInfos, longSentenceThreshold, veryLongSentenceThreshold);
-	const passiveSpans = findPassiveVoiceSpans(normalizedContent, lineInfos);
+	const normalizedContent = normalized.normalizedContent;
+	const sentenceSpans = splitSentences(normalizedContent, normalized.lineInfos, longSentenceThreshold, veryLongSentenceThreshold);
+	const passiveSpans = findPassiveVoiceSpans(normalizedContent, normalized.lineInfos);
 	const passiveVoice = passiveSpans.map((span) => span.match);
-	const adverbs = findAdverbs(normalizedContent, lineInfos);
-	const weakIntensifiers = findWeakIntensifiers(normalizedContent, lineInfos, quoteLineFlags);
+	const adverbs = findAdverbs(normalizedContent, normalized.lineInfos);
+	const weakIntensifiers = findWeakIntensifiers(normalizedContent, normalized.lineInfos, normalized.quoteLineFlags);
 
 	const wordCount = countWords(normalizedContent);
 	const sentenceCount = sentenceSpans.length;
-	const paragraphCount = countParagraphs(normalizedLines);
+	const paragraphCount = countParagraphs(normalized.lines);
 	const readingTimeMinutes = wordCount > 0 ? Math.ceil(wordCount / 238) : 0;
 	const readabilityGrade = calculateReadabilityGrade(normalizedContent, wordCount, sentenceCount);
 	const readabilityLabel = formatReadabilityLabel(readabilityGrade, wordCount, sentenceCount);
@@ -268,8 +248,7 @@ export function hashContent(content: string): string {
 }
 
 export function hasWritingAnalysisOptOut(content: string): boolean {
-	const lines = content.split('\n');
-	return detectFrontmatter(lines)?.optOut ?? false;
+	return normalizeMarkdownForWritingAnalysis(content).optOut;
 }
 
 export function clearWritingAnalysisCache(): void {
@@ -300,192 +279,6 @@ function createNoOpAnalysis(label: string): WritingAnalysis {
 		adverbs: [],
 		weakIntensifiers: []
 	};
-}
-
-function buildLineInfos(lines: string[]): LineInfo[] {
-	const infos: LineInfo[] = [];
-	let start = 0;
-
-	for (const line of lines) {
-		infos.push({
-			text: line,
-			start,
-			length: line.length
-		});
-		start += line.length + 1;
-	}
-
-	return infos;
-}
-
-function detectFrontmatter(lines: string[]): FrontmatterInfo | null {
-	let startLine = 0;
-	while (startLine < lines.length && lines[startLine].trim() === '') {
-		startLine++;
-	}
-
-	if (startLine >= lines.length || lines[startLine].trim() !== '---') {
-		return null;
-	}
-
-	let endLine = -1;
-	for (let i = startLine + 1; i < lines.length; i++) {
-		if (lines[i].trim() === '---') {
-			endLine = i;
-			break;
-		}
-	}
-
-	if (endLine === -1) {
-		return null;
-	}
-
-	let optOut = false;
-	for (let i = startLine + 1; i < endLine; i++) {
-		const match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*:\s*(.*?)\s*$/);
-		if (!match) {
-			continue;
-		}
-
-		const key = match[1].toLowerCase();
-		if (key !== 'nova-analysis') {
-			continue;
-		}
-
-		const rawValue = stripQuotes(match[2]).toLowerCase();
-		if (rawValue === 'false' || rawValue === 'off') {
-			optOut = true;
-		}
-	}
-
-	return {
-		startLine,
-		endLine,
-		optOut
-	};
-}
-
-function stripQuotes(value: string): string {
-	const trimmed = value.trim();
-	if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith('\'') && trimmed.endsWith('\''))) {
-		return trimmed.slice(1, -1);
-	}
-
-	return trimmed;
-}
-
-function blankFrontmatter(lines: string[], frontmatter: FrontmatterInfo | null): void {
-	if (!frontmatter) {
-		return;
-	}
-
-	for (let i = frontmatter.startLine; i <= frontmatter.endLine; i++) {
-		lines[i] = spaces(lines[i].length);
-	}
-}
-
-function blankFencedCodeBlocks(lines: string[]): void {
-	let inFence = false;
-	let fenceChar = '';
-	let fenceLength = 0;
-
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const trimmed = line.trimStart();
-		const fenceMatch = trimmed.match(/^(`{3,}|~{3,})/);
-
-		if (!inFence) {
-			if (!fenceMatch) {
-				continue;
-			}
-
-			inFence = true;
-			fenceChar = fenceMatch[1][0];
-			fenceLength = fenceMatch[1].length;
-			lines[i] = spaces(line.length);
-			continue;
-		}
-
-		lines[i] = spaces(line.length);
-		if (fenceMatch && fenceMatch[1][0] === fenceChar && fenceMatch[1].length >= fenceLength) {
-			inFence = false;
-			fenceChar = '';
-			fenceLength = 0;
-		}
-	}
-}
-
-function blankInlineCode(lines: string[]): void {
-	for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-		const line = lines[lineIndex];
-		// Fast-path: lines without a backtick cannot contain inline code.
-		// Skips the per-char split/join allocation for the common case.
-		if (line.indexOf('`') === -1) {
-			continue;
-		}
-
-		const chars = line.split('');
-		let cursor = 0;
-		while (cursor < chars.length) {
-			if (chars[cursor] !== '`') {
-				cursor++;
-				continue;
-			}
-
-			let runLength = 1;
-			while (cursor + runLength < chars.length && chars[cursor + runLength] === '`') {
-				runLength++;
-			}
-
-			let matchIndex = -1;
-			for (let search = cursor + runLength; search < chars.length; search++) {
-				if (chars[search] !== '`') {
-					continue;
-				}
-
-				let closingLength = 1;
-				while (search + closingLength < chars.length && chars[search + closingLength] === '`') {
-					closingLength++;
-				}
-
-				if (closingLength === runLength) {
-					matchIndex = search;
-					break;
-				}
-
-				search += closingLength - 1;
-			}
-
-			if (matchIndex === -1) {
-				cursor += runLength;
-				continue;
-			}
-
-			for (let i = cursor; i < matchIndex + runLength; i++) {
-				chars[i] = ' ';
-			}
-			cursor = matchIndex + runLength;
-		}
-
-		lines[lineIndex] = chars.join('');
-	}
-}
-
-function markBlockquotes(lines: string[], quoteLineFlags: boolean[]): void {
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const match = line.match(/^(\s*>+\s?)/);
-		if (!match) {
-			continue;
-		}
-
-		quoteLineFlags[i] = true;
-		const chars = line.split('');
-		for (let j = 0; j < match[1].length; j++) {
-			chars[j] = ' ';
-		}
-		lines[i] = chars.join('');
-	}
 }
 
 interface SentenceSpan {
@@ -878,39 +671,6 @@ function isExcludedAdverb(word: string): boolean {
 		lower === 'belly' || lower === 'bully' || lower === 'fully';
 }
 
-function indexToPosition(index: number, lineInfos: LineInfo[]): { line: number; ch: number } {
-	if (lineInfos.length === 0) {
-		return { line: 0, ch: 0 };
-	}
-
-	if (index >= lineInfos[lineInfos.length - 1].start + lineInfos[lineInfos.length - 1].length) {
-		const last = lineInfos[lineInfos.length - 1];
-		return { line: lineInfos.length - 1, ch: last.length };
-	}
-
-	let low = 0;
-	let high = lineInfos.length - 1;
-	while (low <= high) {
-		const mid = Math.floor((low + high) / 2);
-		const line = lineInfos[mid];
-		const nextStart = mid + 1 < lineInfos.length ? lineInfos[mid + 1].start : Number.POSITIVE_INFINITY;
-
-		if (index < line.start) {
-			high = mid - 1;
-			continue;
-		}
-
-		if (index >= nextStart) {
-			low = mid + 1;
-			continue;
-		}
-
-		return { line: mid, ch: index - line.start };
-	}
-
-	return { line: lineInfos.length - 1, ch: lineInfos[lineInfos.length - 1].length };
-}
-
 function findNextTextIndex(text: string, start: number): number {
 	let cursor = start;
 	while (cursor < text.length && /\s/.test(text[cursor])) {
@@ -929,10 +689,6 @@ function trimEndWhitespace(text: string, endExclusive: number): number {
 		cursor--;
 	}
 	return cursor;
-}
-
-function spaces(length: number): string {
-	return ' '.repeat(length);
 }
 
 function roundToTwoDecimals(value: number): number {

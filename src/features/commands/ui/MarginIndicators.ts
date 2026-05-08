@@ -41,10 +41,6 @@ export class MarginIndicators {
     private indicatorManager: CodeMirrorIndicatorManager | null = null;
     private currentOpportunities: IndicatorOpportunity[] = [];
 
-    // Performance optimization - line-level caching
-    private lineAnalysisCache = new Map<number, { hash: string; opportunities: IndicatorOpportunity[] }>();
-    private documentHash = '';
-
     // Settings
     private enabled = true;
     private intensityLevel: 'off' | 'minimal' | 'balanced' | 'aggressive' = 'balanced';
@@ -315,48 +311,6 @@ export class MarginIndicators {
             }
         }
 
-        // Analyze each visible line for writing quality issues (with caching)
-        for (let lineNumber = visibleRange.from; lineNumber <= visibleRange.to; lineNumber++) {
-            const lineText = this.activeEditor!.getLine(lineNumber);
-            if (!lineText || lineText.trim().length === 0) continue;
-
-            // Skip lines that are markers (already handled above)
-            if (lineText.match(/<!--\s*nova:/i)) continue;
-
-            // Check cache first
-            const lineHash = this.hashLine(lineText);
-            const cached = this.lineAnalysisCache.get(lineNumber);
-
-            if (cached && cached.hash === lineHash) {
-                // Use cached results
-                opportunities.push(...cached.opportunities);
-                continue;
-            }
-
-            // Analyze line and cache results
-            const lineOpportunities: IndicatorOpportunity[] = [];
-
-            // Transformation opportunities (✨) - "show don't tell"
-            if (this.shouldShowTransformIndicators(context, lineText)) {
-                lineOpportunities.push({
-                    line: lineNumber,
-                    column: this.getMarginColumn(),
-                    type: 'transform',
-                    icon: '✨',
-                    commands: [],
-                    confidence: this.calculateConfidence(context, 'transform')
-                });
-            }
-
-            // Cache the results
-            this.lineAnalysisCache.set(lineNumber, {
-                hash: lineHash,
-                opportunities: lineOpportunities
-            });
-
-            opportunities.push(...lineOpportunities);
-        }
-
         // Filter by intensity level and confidence
         return this.filterOpportunitiesByIntensity(opportunities);
     }
@@ -414,99 +368,17 @@ export class MarginIndicators {
     }
 
     /**
-     * Generate a simple hash for a line of text
-     */
-    private hashLine(text: string): string {
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32-bit integer
-        }
-        return hash.toString();
-    }
-
-    /**
      * Clear the line analysis cache
      */
     public clearAnalysisCache(): void {
-        this.lineAnalysisCache.clear();
-        this.logger.debug('Line analysis cache cleared');
+        this.logger.debug('No margin prose cache to clear');
     }
 
     /**
      * Clear cache for a specific line (public method for external calls)
      */
     public clearLineCacheForLine(lineNumber: number): void {
-        this.lineAnalysisCache.delete(lineNumber);
-        this.logger.debug(`Cleared cache for line ${lineNumber}`);
-    }
-
-    /**
-     * Check if enhancement indicators should be shown
-     */
-    private shouldShowEnhancementIndicators(context: SmartContext, currentLine: string): boolean {
-        const trimmed = currentLine.trim();
-        
-        // Skip headers
-        if (trimmed.match(/^#+\s/)) return false;
-        
-        // Skip empty lines
-        if (trimmed.length === 0) return false;
-        
-        // Show for bullet points that could be expanded
-        if (trimmed.match(/^[-*+]\s+/)) return true;
-        
-        // Show for statements that could use stronger hooks
-        if (currentLine.toLowerCase().includes('i think') || 
-            currentLine.toLowerCase().includes('maybe') || 
-            currentLine.toLowerCase().includes('perhaps')) return true;
-        
-        return false;
-    }
-
-    /**
-     * Check if metrics indicators should be shown
-     */
-    private shouldShowMetricsIndicators(context: SmartContext): boolean {
-        // Show for documents over certain length
-        return context.metrics.wordCount > 500;
-    }
-
-    /**
-     * Check if transform indicators should be shown
-     */
-    private shouldShowTransformIndicators(context: SmartContext, currentLine: string): boolean {
-        const trimmed = currentLine.trim();
-        
-        // Skip headers
-        if (trimmed.match(/^#+\s/)) return false;
-        
-        // Skip empty lines
-        if (trimmed.length === 0) return false;
-        
-        // Show for "telling" that could be "showing"
-        if (currentLine.match(/\b(felt|thought|believed|knew|realized)\b/)) return true;
-        
-        return false;
-    }
-
-    /**
-     * Calculate confidence score for an opportunity
-     */
-    private calculateConfidence(context: SmartContext, type: string): number {
-        let confidence = 0.7; // Base confidence (raised for testing/development)
-        
-        // Adjust based on document type
-        if (context.documentType === 'academic' && type === 'enhancement') confidence += 0.2;
-        
-        // Adjust based on selection
-        if (context.selection && context.selection.length > 10) confidence += 0.2;
-        
-        // Adjust based on cursor context quality
-        if (context.cursorContext && context.cursorContext.length > 20) confidence += 0.1;
-        
-        return Math.min(1.0, confidence);
+        this.logger.debug(`No margin prose cache for line ${lineNumber}`);
     }
 
     /**

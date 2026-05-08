@@ -11,9 +11,10 @@ Use the existing Claude Code project intelligence as the canonical source of rep
 
 - Read `CLAUDE.md` at the start of any non-trivial task; treat it as mandatory project policy.
 - Use `.claude/README.md` as the index for repo-local skills, commands, and agent guidance.
-- For roadmap, PRD, spec, pricing, or product-positioning work, also read the external Nova docs in:
-  - `../07-Projects/Nova/Core Docs/`
-  - `../07-Projects/Nova/Planning/`
+- For roadmap, PRD, spec, pricing, or product-positioning work, also read the external Nova docs in the Basecamp Obsidian vault:
+  - `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Core Docs/`
+  - `/Users/shawn/Obsidian/Basecamp/07-Projects/Nova/Planning/`
+- Obsidian vault docs are the source of truth for product docs and specs. Do not create generated product docs, specs, or plans inside this plugin repo; update the existing vault documents in Nova's defined folder structure.
 - Skills:
   - Read `.claude/skills/nova-patterns/SKILL.md` before writing or modifying code.
   - Read `.claude/skills/nova-codebase/SKILL.md` when planning scope, mapping files, or navigating unfamiliar areas.
