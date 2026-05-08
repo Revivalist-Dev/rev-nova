@@ -2,7 +2,7 @@
  * @file ProseLinterView Test Suite
  */
 
-import { Editor, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
+import { Editor, MarkdownView, Platform, TFile, WorkspaceLeaf } from 'obsidian';
 import { analyzeWriting, hashContent } from '../../src/core/writing-analysis';
 import { createAnalysisRunToken } from '../../src/core/writing-analysis-runner';
 import { ProseLinterStore } from '../../src/features/prose-linter/prose-linter-store';
@@ -10,6 +10,7 @@ import { ProseLinterView } from '../../src/ui/prose-linter-view';
 
 describe('ProseLinterView', () => {
 	beforeEach(() => {
+		(Platform as unknown as { isMobile: boolean }).isMobile = false;
 		installDomHelpers();
 	});
 
@@ -121,13 +122,56 @@ describe('ProseLinterView', () => {
 	test('jump selects the current issue range', async () => {
 		const content = 'Maybe we should use plain words.';
 		const { plugin, editor } = createPlugin(content);
+		const focusSpy = jest.spyOn(editor, 'focus');
 		const selectionSpy = jest.spyOn(editor, 'setSelection');
+		const scrollSpy = jest.spyOn(editor, 'scrollIntoView');
 		const view = await openView(plugin);
 
 		const jumpButton = Array.from(view.containerEl.querySelectorAll('button'))
 			.find((button) => button.textContent === 'Jump') as HTMLButtonElement;
 		jumpButton.click();
 
+		expect(focusSpy).toHaveBeenCalled();
+		expect(selectionSpy).toHaveBeenCalledWith({ line: 0, ch: 0 }, { line: 0, ch: 5 });
+		expect(scrollSpy).toHaveBeenCalledWith({
+			from: { line: 0, ch: 0 },
+			to: { line: 0, ch: 5 }
+		}, true);
+	});
+
+	test('jump does not focus the editor on mobile', async () => {
+		(Platform as unknown as { isMobile: boolean }).isMobile = true;
+		const content = 'Maybe we should use plain words.';
+		const { plugin, editor } = createPlugin(content);
+		const focusSpy = jest.spyOn(editor, 'focus');
+		const selectionSpy = jest.spyOn(editor, 'setSelection');
+		const scrollSpy = jest.spyOn(editor, 'scrollIntoView');
+		const view = await openView(plugin);
+
+		const jumpButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Jump') as HTMLButtonElement;
+		jumpButton.click();
+
+		expect(focusSpy).not.toHaveBeenCalled();
+		expect(selectionSpy).toHaveBeenCalledWith({ line: 0, ch: 0 }, { line: 0, ch: 5 });
+		expect(scrollSpy).toHaveBeenCalledWith({
+			from: { line: 0, ch: 0 },
+			to: { line: 0, ch: 5 }
+		}, true);
+	});
+
+	test('jump activates on the first pointer press without double firing', async () => {
+		const content = 'Maybe we should use plain words.';
+		const { plugin, editor } = createPlugin(content);
+		const selectionSpy = jest.spyOn(editor, 'setSelection');
+		const view = await openView(plugin);
+
+		const jumpButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Jump') as HTMLButtonElement;
+		jumpButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+		jumpButton.click();
+
+		expect(selectionSpy).toHaveBeenCalledTimes(1);
 		expect(selectionSpy).toHaveBeenCalledWith({ line: 0, ch: 0 }, { line: 0, ch: 5 });
 	});
 
@@ -241,6 +285,21 @@ describe('ProseLinterView', () => {
 		expect(replaceSpy).toHaveBeenCalledWith('use', { line: 0, ch: 10 }, { line: 0, ch: 17 });
 	});
 
+	test('Apply activates on the first pointer press without double firing', async () => {
+		const content = 'We should utilize screenshots.';
+		const { plugin, editor } = createPlugin(content);
+		const replaceSpy = jest.spyOn(editor, 'replaceRange');
+		const view = await openView(plugin);
+
+		const applyButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Apply') as HTMLButtonElement;
+		applyButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+		applyButton.click();
+
+		expect(replaceSpy).toHaveBeenCalledTimes(1);
+		expect(replaceSpy).toHaveBeenCalledWith('use', { line: 0, ch: 10 }, { line: 0, ch: 17 });
+	});
+
 	test('hides a category from the current view without persisting it', async () => {
 		const content = 'Maybe we should utilize screenshots.';
 		const { plugin, store } = createPlugin(content);
@@ -298,6 +357,23 @@ describe('ProseLinterView', () => {
 		]));
 	});
 
+	test('load more activates on the first pointer press', async () => {
+		const content = Array.from({ length: 60 }, (_, index) => `Maybe we should ship section ${index}.`).join('\n');
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+
+		const loadMoreButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent?.startsWith('Show ')) as HTMLButtonElement;
+		expect(loadMoreButton).toBeDefined();
+
+		loadMoreButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+		loadMoreButton.click();
+
+		expect(Array.from(view.containerEl.querySelectorAll('button'))
+			.some((button) => button.textContent?.startsWith('Show '))).toBe(false);
+		expect(view.containerEl.querySelectorAll('.nova-prose-linter-row').length).toBeGreaterThan(50);
+	});
+
 	test('ignores one issue locally without persisting note content', async () => {
 		const content = 'Maybe we should utilize screenshots.';
 		let saved: unknown = null;
@@ -320,6 +396,49 @@ describe('ProseLinterView', () => {
 		expect(view.containerEl.textContent).not.toContain('"utilize" is more complex than this sentence needs.');
 		expect(JSON.stringify(saved)).not.toContain('Maybe');
 		expect(JSON.stringify(saved)).not.toContain('utilize');
+	});
+
+	test('Ignore activates on the first pointer press without persisting note content', async () => {
+		const content = 'Maybe we should utilize screenshots.';
+		let saved: unknown = null;
+		const { plugin } = createPlugin(content);
+		plugin.proseLinterStore = new ProseLinterStore({
+			loadData: async () => null,
+			saveData: async (data) => {
+				saved = data;
+			},
+			now: () => 10
+		});
+		const view = await openView(plugin);
+
+		const ignoreButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Ignore') as HTMLButtonElement;
+		ignoreButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+		ignoreButton.click();
+		await Promise.resolve();
+
+		expect(saved).toBeNull();
+		expect(view.containerEl.textContent).not.toContain('"utilize" is more complex than this sentence needs.');
+	});
+
+	test('Analyze note activates on the first pointer press for large notes', async () => {
+		const content = 'A large note placeholder.';
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+		(view as any).state = {
+			...(view as any).state,
+			oversized: true
+		};
+		const refreshSpy = jest.spyOn(view, 'refresh').mockResolvedValue(undefined);
+		(view as any).render();
+
+		const analyzeButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Analyze note') as HTMLButtonElement;
+		analyzeButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+		analyzeButton.click();
+
+		expect(refreshSpy).toHaveBeenCalledTimes(1);
+		expect(refreshSpy).toHaveBeenCalledWith(true);
 	});
 
 	test('uses local analysis for the current note', async () => {

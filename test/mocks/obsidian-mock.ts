@@ -19,6 +19,12 @@ export interface Stat {
     size: number;
 }
 
+export const Platform = {
+    isMobile: false,
+    isDesktop: true,
+    isDesktopApp: true
+};
+
 // DataAdapter interface (minimal mock)
 export interface DataAdapter {
     getName(): string;
@@ -196,6 +202,10 @@ export class Editor {
     
     setSelection(from: EditorPosition, to: EditorPosition): void {
         this.selection = { from, to };
+    }
+
+    focus(): void {
+        // Mock implementation
     }
     
     scrollIntoView(_range: { from: EditorPosition; to: EditorPosition }, _center?: boolean): void {

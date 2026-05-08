@@ -2,7 +2,7 @@
  * @file ProseLinterView - Dedicated current-note Prose Linter view
  */
 
-import { Editor, ItemView, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
+import { Editor, ItemView, MarkdownView, Platform, TFile, WorkspaceLeaf } from 'obsidian';
 import type NovaPlugin from '../../main';
 import { VIEW_TYPE_PROSE_LINTER } from '../constants';
 import { analyzeWriting, hashContent, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
@@ -287,7 +287,7 @@ export class ProseLinterView extends ItemView {
 				text: 'Analyze note'
 			});
 			analyzeButton.setAttribute('type', 'button');
-			this.registerDomEvent(analyzeButton, 'click', () => {
+			this.registerButtonActivation(analyzeButton, () => {
 				void this.refresh(true);
 			});
 			return;
@@ -330,31 +330,7 @@ export class ProseLinterView extends ItemView {
 			cardEl.setAttribute('aria-label', `${hidden ? 'Show' : 'Hide'} ${count === 1 ? group.singular : group.plural}`);
 			cardEl.createSpan({ cls: 'nova-prose-linter-category-count', text: count.toLocaleString() });
 			cardEl.createSpan({ cls: 'nova-prose-linter-category-label', text: count === 1 ? group.singular : group.plural });
-			let handledPointerActivation = false;
-			const toggleFromPointer = (event: MouseEvent | PointerEvent): void => {
-				if (event.button !== 0) {
-					return;
-				}
-				handledPointerActivation = true;
-				event.preventDefault();
-				event.stopPropagation();
-				this.toggleCategoryGroup(group);
-			};
-			this.registerDomEvent(cardEl, 'pointerdown', toggleFromPointer);
-			this.registerDomEvent(cardEl, 'mousedown', (event: MouseEvent) => {
-				if (handledPointerActivation) {
-					event.stopPropagation();
-					return;
-				}
-				toggleFromPointer(event);
-			});
-			this.registerDomEvent(cardEl, 'click', (event: MouseEvent) => {
-				event.preventDefault();
-				event.stopPropagation();
-				if (handledPointerActivation) {
-					handledPointerActivation = false;
-					return;
-				}
+			this.registerButtonActivation(cardEl, () => {
 				this.toggleCategoryGroup(group);
 			});
 		}
@@ -414,7 +390,7 @@ export class ProseLinterView extends ItemView {
 				text: `Show ${page.nextVisibleCount - page.visibleCount} more`
 			});
 			loadMoreButton.setAttribute('type', 'button');
-			this.registerDomEvent(loadMoreButton, 'click', () => {
+			this.registerButtonActivation(loadMoreButton, () => {
 				this.visibleCount = page.nextVisibleCount;
 				this.renderIssues();
 			});
@@ -452,9 +428,40 @@ export class ProseLinterView extends ItemView {
 			text
 		});
 		button.setAttribute('type', 'button');
+		this.registerButtonActivation(button, () => {
+			onClick();
+		});
+	}
+
+	private registerButtonActivation(button: HTMLElement, onActivate: () => void): void {
+		let handledPointerActivation = false;
+		const activateFromPointer = (event: MouseEvent | PointerEvent): void => {
+			if (event.button !== 0) {
+				return;
+			}
+			handledPointerActivation = true;
+			event.preventDefault();
+			event.stopPropagation();
+			onActivate();
+		};
+
+		this.registerDomEvent(button, 'pointerdown', activateFromPointer);
+		this.registerDomEvent(button, 'mousedown', (event: MouseEvent) => {
+			if (handledPointerActivation) {
+				event.preventDefault();
+				event.stopPropagation();
+				return;
+			}
+			activateFromPointer(event);
+		});
 		this.registerDomEvent(button, 'click', (event: MouseEvent) => {
 			event.preventDefault();
-			onClick();
+			event.stopPropagation();
+			if (handledPointerActivation) {
+				handledPointerActivation = false;
+				return;
+			}
+			onActivate();
 		});
 	}
 
@@ -501,6 +508,9 @@ export class ProseLinterView extends ItemView {
 		}
 		const from = { line: issue.line, ch: issue.startCh };
 		const to = { line: issue.line, ch: issue.endCh };
+		if (!Platform.isMobile) {
+			editor.focus();
+		}
 		editor.setSelection(from, to);
 		editor.scrollIntoView({ from, to }, true);
 	}
