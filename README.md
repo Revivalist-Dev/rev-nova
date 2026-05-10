@@ -1,6 +1,6 @@
-# Nova – AI Writing for Obsidian
+# Nova – AI Writing Editor for Obsidian
 
-AI editor for Obsidian that sharpens your writing in place. Select text, refine it, challenge your own thinking — without leaving your document. Not a generator. An editor.
+AI writing editor, native to Obsidian. Sharpen your prose, refine selected text, write at the cursor, and review local clarity checks. Not a generator. An editor.
 
 Use local AI (Ollama, LM Studio) or your own API keys (Claude, OpenAI, Gemini). Nova never sees your content, never stores your conversations, and collects zero telemetry.
 
@@ -16,7 +16,7 @@ All local, zero AI costs, free for all users.
 
 ### Prose Linter
 
-Hemingway-style clarity review inside your current note. Open it from the command palette and it appears in its own right-side review pane, styled like Nova's sidebar. Nova adds filled, category-colored highlights while the pane is active and flags long and very long sentences, passive voice, adverbs, weak intensifiers, qualifiers, complex words, repeated words, and repeated phrases. Rows jump to the exact issue; safe local replacements appear only when Nova can verify the current text still matches.
+Sharper prose, native to Obsidian. Open Prose Linter from the command palette and it appears in its own right-side review pane, styled like Nova's sidebar. Nova adds filled, category-colored highlights while the pane is active and flags long and very long sentences, passive voice, adverbs, weak intensifiers, qualifiers, complex words, repeated words, and repeated phrases. Rows jump to the exact issue; safe local replacements appear only when Nova can verify the current text still matches.
 
 Prose Linter is free, local, Markdown-aware, and does not require an account, API key, or Supernova license. It is not a grammar checker.
 
@@ -102,7 +102,7 @@ The plugin includes a "Supernova" tab in settings with information about support
 ## Roadmap
 
 **Recently shipped:**
-- Prose Linter (v1.6) — Free local clarity workbench for the current note in its own right-side review pane: Hemingway-style filled highlights, category filters, Markdown-aware analysis, safe local Apply actions, and jump-to-issue editing. No AI key or Supernova license required.
+- Prose Linter (v1.6) — Free local clarity workbench for sharper prose, native to Obsidian: filled highlights, category filters, Markdown-aware analysis, safe local Apply actions, and jump-to-issue editing. No AI key or Supernova license required.
 - Writing Dashboard (v1.5) — Vault-wide writing quality scores, per-document breakdown, and historical trend tracking. Entirely local, free for all users.
 - Writing Analysis (v1.4) — Readability scoring, passive voice metrics, sentence-length analysis, adverb density, weak intensifier flagging, and sidebar stats. All local, zero API costs.
 - Auto-Context (v1.3) — Wikilink resolution, backlinks, and the Context Quick Panel.
