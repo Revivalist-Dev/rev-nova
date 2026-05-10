@@ -22,7 +22,7 @@ Prose Linter is free, local, Markdown-aware, and does not require an account, AP
 
 ### Writing Analysis
 
-Readability score, word and sentence counts, reading time, passive voice percentage, adverb density, and weak intensifier detection — running locally with zero AI costs. Writing Analysis is the metrics engine; Prose Linter is the visual review pane for highlights and issue-by-issue editing.
+Readability score, word and sentence counts, reading time, passive voice percentage, adverb density, and weak intensifier detection — running locally with zero AI costs. Writing Analysis is the metrics engine; Prose Linter is the visual review pane for highlights and issue-by-issue editing. To keep editing responsive, Nova analyzes the current note as a snapshot, marks results stale after edits, and refreshes when you click Analyze.
 
 **Note:** Writing analysis is English-only. Non-English documents won't get useful results from these features. AI editing works in any language your model supports.
 
