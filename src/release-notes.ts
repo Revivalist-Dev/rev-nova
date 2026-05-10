@@ -14,6 +14,26 @@ export interface ReleaseNotesEntry {
 
 export const RELEASE_NOTES: Record<string, string> = {
 	// Add entries before running `npm version`. The /release command handles this.
+	'1.6.0': [
+		'## What\'s New in Nova 1.6.0',
+		'',
+		'### Prose Linter',
+		'',
+		'- **Sharper prose, native to Obsidian.** Nova now includes Prose Linter: a free, local clarity review pane for the current note. Open it from the command palette or the Writing panel to review sentence length, passive voice, adverbs, weak intensifiers, qualifiers, complex words, repeated words, and repeated phrases.',
+		'- **Filled editor highlights make issues easy to see.** While Prose Linter is active, Nova highlights issues directly in the note with category colors. Switch back to the main Nova sidebar and the review highlights clear, keeping the Writing panel focused on metrics.',
+		'- **Review issues one by one.** Each issue card includes an excerpt, explanation, practical suggestion, and actions. Use Jump to move to the exact text, Ignore to hide an issue for the session, and Apply only when Nova can verify a safe local replacement.',
+		'- **Category filters keep noisy notes manageable.** Solid category buttons let you show or hide issue types, and large issue lists render in bounded batches so the pane stays responsive.',
+		'',
+		'### Writing Analysis',
+		'',
+		'- **Writing Analysis now uses snapshots.** Nova analyzes the current note when you open it, then marks results as edited after you make changes. This keeps large notes responsive instead of re-running analysis while you type.',
+		'- **Manual refresh is clearer.** Click Analyze when you want fresh metrics. The last snapshot stays visible until then, so you can keep writing without losing context.',
+		'',
+		'### Polish and Reliability',
+		'',
+		'- **General prose margin hints were retired.** Smart Fill marker affordances remain, but general prose suggestions now live in Prose Linter where they can be filtered, explained, jumped to, and reviewed consistently.',
+		'- **Large-note handling is safer.** Nova avoids stale review highlights after edits, validates exact ranges before applying local replacements, and keeps oversized analysis paths explicit.',
+	].join('\n'),
 	'1.5.5': [
 		'## What\'s New in Nova 1.5.5',
 		'',
@@ -49,12 +69,6 @@ export const RELEASE_NOTES: Record<string, string> = {
 		'### Under the Hood',
 		'- Tightened the Writing Analysis scheduling path so it skips cleanly when the editor isn\'t ready, instead of scheduling work against a not-yet-wired-up view.',
 		'- Replaced an inline style assignment on the context budget bar with a CSS custom property, aligning with the rest of the plugin\'s Obsidian compliance patterns.',
-	].join('\n'),
-	'1.5.1': [
-		'## What\'s New in Nova 1.5.1',
-		'',
-		'### Bug Fixes',
-		'- **Writing Analysis panel no longer disappears when clicking the file navigator.** Previously, clicking from an active editor into the file explorer cleared the panel. It now stays visible until you open a different document.',
 	].join('\n'),
 };
 
