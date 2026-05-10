@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { App, TFile, Vault, Workspace, MarkdownView, Editor } from 'obsidian';
 import { NovaSidebarView } from '../../src/ui/sidebar-view';
 import { StreamingManager } from '../../src/ui/streaming-manager';
+import { MAX_WRITING_ANALYSIS_CHAR_LENGTH } from '../../src/core/writing-analysis';
 import NovaPlugin from '../../main';
 
 // Obsidian is already mocked via jest.config.js moduleNameMapper
@@ -185,6 +186,36 @@ describe('Streaming Completion Updates', () => {
         // Verify the centralized stats method and context refresh are called
         expect(refreshAllStatsSpy).toHaveBeenCalled();
         expect(refreshContextSpy).toHaveBeenCalled();
+    });
+
+    it('should skip live context refresh for very large files', () => {
+        const largeFile = { stat: { size: MAX_WRITING_ANALYSIS_CHAR_LENGTH + 1 } };
+        const smallFile = { stat: { size: MAX_WRITING_ANALYSIS_CHAR_LENGTH } };
+
+        expect((sidebar as any).shouldSkipLiveRefreshForLargeFile(largeFile)).toBe(true);
+        expect((sidebar as any).shouldSkipLiveRefreshForLargeFile(smallFile)).toBe(false);
+    });
+
+    it('should suppress live context refresh shortly after editor changes', () => {
+        jest.useFakeTimers();
+        const rebuildAutoContext = jest.fn(async () => undefined);
+        const updateContextIndicatorSpy = jest.spyOn(sidebar as any, 'updateContextIndicator').mockImplementation(() => {});
+        const updateTokenDisplaySpy = jest.spyOn(sidebar as any, 'updateTokenDisplay').mockImplementation(() => {});
+
+        try {
+            (sidebar as any).currentFile = { stat: { size: 1_000 } };
+            (sidebar as any).lastEditorChangeAt = Date.now();
+            (sidebar as any).contextManager = { rebuildAutoContext };
+
+            (sidebar as any).scheduleContextRefresh();
+            jest.advanceTimersByTime(1_000);
+
+            expect(rebuildAutoContext).not.toHaveBeenCalled();
+            expect(updateContextIndicatorSpy).toHaveBeenCalled();
+            expect(updateTokenDisplaySpy).toHaveBeenCalled();
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
 

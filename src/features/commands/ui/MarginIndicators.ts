@@ -8,12 +8,10 @@ import { MarkdownView, Editor } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import { Logger } from '../../../utils/logger';
 import { TimeoutManager } from '../../../utils/timeout-manager';
-import { SmartVariableResolver } from '../core/SmartVariableResolver';
 import { CommandEngine, MarkerInsight } from '../core/CommandEngine';
-import { SmartTimingEngine } from '../core/SmartTimingEngine';
 import { InsightPanel } from './InsightPanel';
 import { CodeMirrorIndicatorManager } from './codemirror-decorations';
-import type { SmartContext, MarkdownCommand, TimingDecision, TypingMetrics } from '../types';
+import type { MarkdownCommand } from '../types';
 import type NovaPlugin from '../../../../main';
 
 interface IndicatorOpportunity {
@@ -28,9 +26,7 @@ interface IndicatorOpportunity {
 
 export class MarginIndicators {
     private plugin: NovaPlugin;
-    private variableResolver: SmartVariableResolver;
     private commandEngine: CommandEngine;
-    private smartTimingEngine: SmartTimingEngine;
     public insightPanel: InsightPanel;
     private logger = Logger.scope('MarginIndicators');
     private timeoutManager = new TimeoutManager();
@@ -40,6 +36,9 @@ export class MarginIndicators {
     private activeView: MarkdownView | null = null;
     private indicatorManager: CodeMirrorIndicatorManager | null = null;
     private currentOpportunities: IndicatorOpportunity[] = [];
+    private pendingIndicatorAnalysisTimeout: number | null = null;
+    private observedEditorEls = new WeakSet<HTMLElement>();
+    private observedScrollerEls = new WeakSet<HTMLElement>();
 
     // Settings
     private enabled = true;
@@ -50,14 +49,12 @@ export class MarginIndicators {
 
     constructor(
         plugin: NovaPlugin,
-        variableResolver: SmartVariableResolver,
+        _variableResolver: unknown,
         commandEngine: CommandEngine,
-        smartTimingEngine: SmartTimingEngine
+        _smartTimingEngine: unknown
     ) {
         this.plugin = plugin;
-        this.variableResolver = variableResolver;
         this.commandEngine = commandEngine;
-        this.smartTimingEngine = smartTimingEngine;
         this.insightPanel = new InsightPanel(plugin, commandEngine);
 
         // Initialize settings from plugin configuration
@@ -69,9 +66,6 @@ export class MarginIndicators {
      */
     init(): void {
         this.logger.info('Initializing MarginIndicators');
-
-        // Set up SmartTimingEngine subscriptions
-        this.setupTimingEventListeners();
 
         // Register for workspace events
         this.plugin.registerEvent(
@@ -98,42 +92,6 @@ export class MarginIndicators {
         this.onActiveEditorChange();
 
         this.logger.info('MarginIndicators initialized');
-    }
-
-    /**
-     * Set up SmartTimingEngine event listeners
-     */
-    private setupTimingEventListeners(): void {
-        // Subscribe to timing decisions
-        this.smartTimingEngine.on('timing-decision', (decision: TimingDecision) => {
-            if (decision.shouldShow) {
-                this.logger.debug(`Timing decision: ${decision.reason}`);
-                if (decision.nextCheckDelay && decision.nextCheckDelay > 0) {
-                    // Decision indicates we should schedule analysis
-                    // The SmartTimingEngine handles the scheduling
-                } else {
-                    // Immediate analysis requested (e.g., after scroll)
-                    void this.analyzeCurrentContext();
-                }
-            } else {
-                this.logger.debug(`Timing decision to hide: ${decision.reason}`);
-                this.hideAllIndicators();
-            }
-        });
-
-        // Subscribe to typing metrics for logging/debugging
-        this.smartTimingEngine.on('typing-metrics-updated', (metrics: TypingMetrics) => {
-            this.logger.debug(`Typing metrics: ${metrics.currentWPM.toFixed(1)} WPM, fast: ${metrics.isTypingFast}`);
-        });
-
-        // Subscribe to analysis scheduling events
-        this.smartTimingEngine.on('analysis-scheduled', (delay: number) => {
-            this.logger.debug(`Analysis scheduled in ${delay}ms`);
-            // Schedule our actual analysis to run after the delay
-            this.timeoutManager.addTimeout(() => {
-                void this.analyzeCurrentContext();
-            }, delay);
-        });
     }
 
     /**
@@ -182,13 +140,8 @@ export class MarginIndicators {
         const editorEl = this.activeView.containerEl.querySelector('.cm-editor') as HTMLElement;
         const scrollerEl = this.activeView.containerEl.querySelector('.cm-scroller') as HTMLElement;
         
-        if (editorEl) {
-            this.plugin.registerDomEvent(
-                editorEl,
-                'input',
-                () => this.onEditorInput()
-            );
-
+        if (editorEl && !this.observedEditorEls.has(editorEl)) {
+            this.observedEditorEls.add(editorEl);
             // Listen for cursor position changes
             this.plugin.registerDomEvent(
                 editorEl,
@@ -198,7 +151,8 @@ export class MarginIndicators {
         }
 
         // Listen for scroll events (to re-analyze visible content)
-        if (scrollerEl) {
+        if (scrollerEl && !this.observedScrollerEls.has(scrollerEl)) {
+            this.observedScrollerEls.add(scrollerEl);
             this.plugin.registerDomEvent(
                 scrollerEl,
                 'scroll',
@@ -207,31 +161,22 @@ export class MarginIndicators {
         }
     }
 
-    /**
-     * Handle editor input events
-     */
-    private onEditorInput(): void {
-        // Clear cache when document changes
-        this.clearAnalysisCache();
-
-        // Update document type for context-aware timing
-        if (this.activeView?.file) {
-            const context = this.variableResolver.buildSmartContext();
-            if (context) {
-                this.smartTimingEngine.setDocumentType(context.documentType);
-            }
+    private scheduleIndicatorAnalysis(delay: number): void {
+        if (this.pendingIndicatorAnalysisTimeout !== null) {
+            this.timeoutManager.removeTimeout(this.pendingIndicatorAnalysisTimeout);
         }
 
-        // Delegate timing decisions to SmartTimingEngine
-        this.smartTimingEngine.onEditorInput();
+        this.pendingIndicatorAnalysisTimeout = this.timeoutManager.addTimeout(() => {
+            this.pendingIndicatorAnalysisTimeout = null;
+            void this.analyzeCurrentContext();
+        }, delay);
     }
 
     /**
      * Handle scroll events with debouncing
      */
     private onScroll(): void {
-        // Delegate scroll timing decisions to SmartTimingEngine
-        this.smartTimingEngine.onScroll();
+        this.scheduleIndicatorAnalysis(150);
     }
 
 
@@ -244,29 +189,13 @@ export class MarginIndicators {
         try {
             this.logger.debug('Analyzing context for margin indicators...');
 
-            // Build smart context
-            const context = this.variableResolver.buildSmartContext();
-            if (!context) {
-                this.logger.warn('No smart context available');
-                return;
-            }
-
-            // Update SmartTimingEngine with current document type for context-aware timing
-            this.smartTimingEngine.setDocumentType(context.documentType);
-
-            this.logger.debug('Smart context built:', {
-                hasSelection: !!context.selection,
-                documentType: context.documentType,
-                wordCount: context.metrics.wordCount
-            });
-
             // Get current line for analysis
             const cursor = this.activeEditor.getCursor();
             const currentLine = this.activeEditor.getLine(cursor.line);
             this.logger.debug(`Analyzing line ${cursor.line}: "${currentLine}"`);
 
             // Find opportunities (including markers)
-            const opportunities = this.findOpportunities(context);
+            const opportunities = this.findOpportunities();
             this.logger.debug(`Found ${opportunities.length} opportunities:`, opportunities.map(o => `Line ${o.line}: ${o.type} (${o.confidence})`));
 
             // Update indicators
@@ -281,7 +210,7 @@ export class MarginIndicators {
      * Find command opportunities based on context
      * Now includes marker detection for `<!-- nova: instruction -->` patterns
      */
-    private findOpportunities(context: SmartContext): IndicatorOpportunity[] {
+    private findOpportunities(): IndicatorOpportunity[] {
         const opportunities: IndicatorOpportunity[] = [];
 
         // Get visible lines range
@@ -293,10 +222,9 @@ export class MarginIndicators {
         const smartFillEnabled = this.plugin.featureManager?.isFeatureEnabled('smartfill') ?? true;
 
         if (this.enabled && smartFillEnabled) {
-            const documentContent = context.document;
-            const markers = this.commandEngine.detectMarkers(documentContent);
+            const markers = this.detectVisibleMarkers(visibleRange);
 
-            // Add marker-based opportunities (show regardless of visible range when enabled)
+            // Add marker-based opportunities for visible Smart Fill markers.
             // Fill markers are explicit user-placed markers that need to be clickable
             for (const marker of markers) {
                 opportunities.push({
@@ -313,6 +241,32 @@ export class MarginIndicators {
 
         // Filter by intensity level and confidence
         return this.filterOpportunitiesByIntensity(opportunities);
+    }
+
+    private detectVisibleMarkers(visibleRange: { from: number; to: number }): MarkerInsight[] {
+        if (!this.activeEditor) {
+            return [];
+        }
+
+        const lineCount = this.activeEditor.lineCount();
+        if (lineCount <= 0) {
+            return [];
+        }
+
+        const from = Math.max(0, Math.min(visibleRange.from, lineCount - 1));
+        const to = Math.max(from, Math.min(visibleRange.to, lineCount - 1));
+        const visibleLines: string[] = [];
+
+        for (let lineNumber = from; lineNumber <= to; lineNumber++) {
+            visibleLines.push(this.activeEditor.getLine(lineNumber));
+        }
+
+        const visibleContent = visibleLines.join('\n');
+        return this.commandEngine.detectMarkers(visibleContent).map(marker => ({
+            ...marker,
+            line: marker.line + from,
+            endLine: marker.endLine + from
+        }));
     }
 
     /**
@@ -558,12 +512,13 @@ export class MarginIndicators {
      * Clean up current editor listeners and indicators
      */
     private cleanupCurrentEditor(): void {
+        if (this.pendingIndicatorAnalysisTimeout !== null) {
+            this.timeoutManager.removeTimeout(this.pendingIndicatorAnalysisTimeout);
+            this.pendingIndicatorAnalysisTimeout = null;
+        }
         this.clearIndicators();
         this.clearAnalysisCache();
         this.indicatorManager = null;
-        
-        // Timer cleanup is now handled by SmartTimingEngine
-        this.smartTimingEngine.cancelPendingAnalysis();
     }
 
     /**
@@ -611,7 +566,6 @@ export class MarginIndicators {
         this.cleanupCurrentEditor();
         this.timeoutManager.clearAll();
         this.insightPanel.cleanup();
-        this.smartTimingEngine.cleanup();
         this.activeEditor = null;
         this.activeView = null;
         this.logger.info('MarginIndicators cleaned up');

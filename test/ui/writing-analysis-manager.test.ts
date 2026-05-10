@@ -4,7 +4,7 @@
 
 import { Editor, MarkdownView, TFile } from 'obsidian';
 import { VIEW_TYPE_NOVA_SIDEBAR, VIEW_TYPE_PROSE_LINTER } from '../../src/constants';
-import { hashContent } from '../../src/core/writing-analysis';
+import { hashContent, MAX_WRITING_ANALYSIS_CHAR_LENGTH } from '../../src/core/writing-analysis';
 import { WRITING_ANALYSIS_UPDATED_EVENT, WritingAnalysisManager, type WritingAnalysisUpdateDetail } from '../../src/ui/writing-analysis-manager';
 
 describe('WritingAnalysisManager', () => {
@@ -36,6 +36,7 @@ describe('WritingAnalysisManager', () => {
 
 		return {
 			workspace,
+			plugin,
 			manager: new WritingAnalysisManager(plugin as never)
 		};
 	}
@@ -165,6 +166,92 @@ describe('WritingAnalysisManager', () => {
 		expect((manager as any).proseLinterReviewActive).toBe(false);
 		expect(highlightManager.clearHighlights).toHaveBeenCalled();
 		tabHeader.remove();
+	});
+
+	test('does not register edit-time analysis listeners when tracking an active editor', async () => {
+		const { workspace, plugin, manager } = createManager('markdown');
+		const trackedView = createTrackedMarkdownView();
+		const editorEl = trackedView.containerEl.createDiv({ cls: 'cm-editor' });
+		workspace.getActiveViewOfType.mockReturnValue(trackedView);
+
+		await manager.refreshForActiveView(true);
+
+		const registeredEditorInputListener = plugin.registerDomEvent.mock.calls.some(([element, type]) => {
+			return element === editorEl && type === 'input';
+		});
+		expect(registeredEditorInputListener).toBe(false);
+	});
+
+	test('marks current analysis stale on editor changes without discarding stats', () => {
+		const { manager } = createManager('markdown');
+		const trackedView = createTrackedMarkdownView();
+		const previousAnalysis = { readabilityGrade: 8, wordCount: 12 } as never;
+		const emitted: WritingAnalysisUpdateDetail[] = [];
+		const listener = (event: Event) => {
+			emitted.push((event as CustomEvent<WritingAnalysisUpdateDetail>).detail);
+		};
+		document.addEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+
+		try {
+			(manager as any).activeView = trackedView;
+			(manager as any).latestAnalysis = previousAnalysis;
+
+			(manager as any).handleEditorChange(trackedView.editor);
+
+			expect(manager.getLatestAnalysis()).toBe(previousAnalysis);
+			expect(manager.isAnalysisStale()).toBe(true);
+			expect(emitted).toHaveLength(1);
+			expect(emitted.at(-1)).toEqual(expect.objectContaining({
+				analysis: previousAnalysis,
+				eligible: true,
+				stale: true
+			}));
+		} finally {
+			document.removeEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+		}
+	});
+
+	test('does not emit repeated stale updates while typing continues', () => {
+		const { manager } = createManager('markdown');
+		const trackedView = createTrackedMarkdownView();
+		const emitted: WritingAnalysisUpdateDetail[] = [];
+		const listener = (event: Event) => {
+			emitted.push((event as CustomEvent<WritingAnalysisUpdateDetail>).detail);
+		};
+		document.addEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+
+		try {
+			(manager as any).activeView = trackedView;
+			(manager as any).latestAnalysis = { readabilityGrade: 8, wordCount: 12 } as never;
+
+			(manager as any).handleEditorChange(trackedView.editor);
+			(manager as any).handleEditorChange(trackedView.editor);
+			(manager as any).handleEditorChange(trackedView.editor);
+
+			expect(manager.isAnalysisStale()).toBe(true);
+			expect(emitted).toHaveLength(1);
+		} finally {
+			document.removeEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+		}
+	});
+
+	test('keeps stale analysis when focus returns to the same markdown editor', async () => {
+		const { workspace, manager } = createManager('markdown');
+		const trackedView = createTrackedMarkdownView();
+		const previousAnalysis = { readabilityGrade: 8, wordCount: 12 } as never;
+		workspace.getActiveViewOfType.mockReturnValue(trackedView);
+		(manager as any).activeView = trackedView;
+		(manager as any).latestAnalysis = previousAnalysis;
+		(manager as any).analysisStale = true;
+
+		(manager as any).handleActiveLeafChange({
+			view: { getViewType: () => 'markdown' }
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(manager.getLatestAnalysis()).toBe(previousAnalysis);
+		expect(manager.isAnalysisStale()).toBe(true);
 	});
 
 	test('shows prose linter highlights when the prose linter tab header is clicked', () => {
@@ -366,41 +453,150 @@ describe('WritingAnalysisManager', () => {
 			return { manager, fakeEditor };
 		}
 
-		test('scheduleAnalysis skips documents over the size threshold', () => {
-			const { manager } = createManagerWithEditor(60_000);
-			const spy = jest.spyOn(manager as any, 'runAnalysis');
-
-			manager.scheduleAnalysis();
-
-			expect((manager as any).pendingAnalysisTimeout).toBeNull();
-			expect(spy).not.toHaveBeenCalled();
-		});
-
-		test('scheduleAnalysis schedules analysis for documents under the threshold', () => {
-			const { manager } = createManagerWithEditor(1_000);
-
-			manager.scheduleAnalysis();
-
-			expect((manager as any).pendingAnalysisTimeout).not.toBeNull();
-		});
-
-		test('analyzeNow bypasses the size gate', async () => {
-			const { manager } = createManagerWithEditor(60_000);
-			const spy = jest.spyOn(manager as any, 'runAnalysis').mockResolvedValue(undefined);
+		test('analyzes medium-large notes during explicit snapshot analysis', async () => {
+			const { manager } = createManagerWithEditor(9_000);
 
 			await manager.analyzeNow();
 
-			expect(spy).toHaveBeenCalledTimes(1);
+			expect(manager.isActiveFileOversized()).toBe(false);
+			expect(manager.isAnalysisStale()).toBe(false);
+			expect(manager.getLatestAnalysis()).toEqual(expect.objectContaining({
+				wordCount: expect.any(Number)
+			}));
+		});
+
+		test('analyzeNow respects the oversized document gate', async () => {
+			const { manager } = createManagerWithEditor(MAX_WRITING_ANALYSIS_CHAR_LENGTH + 1);
+			const emitted: WritingAnalysisUpdateDetail[] = [];
+			const listener = (event: Event) => {
+				emitted.push((event as CustomEvent<WritingAnalysisUpdateDetail>).detail);
+			};
+			document.addEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+
+			try {
+				await manager.analyzeNow();
+
+				expect(manager.isActiveFileOversized()).toBe(true);
+				expect(manager.isAnalysisStale()).toBe(false);
+				expect(manager.getLatestAnalysis()).toBeNull();
+				expect(emitted.at(-1)).toEqual(expect.objectContaining({
+					eligible: true,
+					oversized: true,
+					stale: false,
+					analysis: null,
+					filePath: 'notes/big.md'
+				}));
+			} finally {
+				document.removeEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+			}
 		});
 	});
 
-	describe('debounce timing', () => {
-		test('ANALYSIS_DEBOUNCE_MS is set to 1500 ms', () => {
-			expect((WritingAnalysisManager as any).ANALYSIS_DEBOUNCE_MS).toBe(1500);
+	describe('editor focus preservation', () => {
+		function createFocusedAnalysisManager(content = 'This is a short note. It has another sentence.'): {
+			manager: WritingAnalysisManager;
+			cm: { focus: jest.Mock };
+			editorInput: HTMLElement;
+			cleanup: () => void;
+		} {
+			const workspace = {
+				getActiveViewOfType: jest.fn(() => null),
+				on: jest.fn(() => ({ unsubscribe: () => undefined }))
+			};
+			const plugin = {
+				app: {
+					workspace,
+					vault: { cachedRead: jest.fn(async () => content) }
+				},
+				settings: {
+					writingAnalysis: {
+						enabled: true,
+						longSentenceThreshold: 25,
+						veryLongSentenceThreshold: 40
+					}
+				},
+				registerEvent: jest.fn(),
+				registerDomEvent: jest.fn(),
+				writingAnalysisStateField: {}
+			};
+			const manager = new WritingAnalysisManager(plugin as never);
+			const editorDom = document.createElement('div');
+			const editorInput = document.createElement('div');
+			editorDom.classList.add('cm-editor');
+			editorInput.tabIndex = 0;
+			editorDom.appendChild(editorInput);
+			document.body.appendChild(editorDom);
+
+			const cm = {
+				dom: editorDom,
+				focus: jest.fn(() => editorInput.focus()),
+				state: { doc: { length: content.length } }
+			};
+			const fakeEditor = {
+				getValue: () => content,
+				cm
+			};
+			const view = new MarkdownView(null);
+			view.file = new TFile('notes/current.md');
+			view.editor = fakeEditor as unknown as Editor;
+			(manager as any).activeView = view;
+
+			return {
+				manager,
+				cm,
+				editorInput,
+				cleanup: () => editorDom.remove()
+			};
+		}
+
+		test('restores editor focus when analysis update leaves focus on the document shell', async () => {
+			const { manager, cm, editorInput, cleanup } = createFocusedAnalysisManager();
+			const listener = () => {
+				editorInput.blur();
+			};
+			document.addEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+
+			try {
+				(manager as any).analysisStale = true;
+				editorInput.focus();
+
+				await manager.analyzeNow();
+
+				expect(cm.focus).toHaveBeenCalledTimes(1);
+				expect(manager.isAnalysisStale()).toBe(false);
+				expect(document.activeElement).toBe(editorInput);
+			} finally {
+				document.removeEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+				cleanup();
+			}
+		});
+
+		test('does not steal focus from another interactive element', async () => {
+			const { manager, cm, editorInput, cleanup } = createFocusedAnalysisManager();
+			const button = document.createElement('button');
+			button.textContent = 'Sidebar action';
+			document.body.appendChild(button);
+			const listener = () => {
+				button.focus();
+			};
+			document.addEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+
+			try {
+				editorInput.focus();
+
+				await manager.analyzeNow();
+
+				expect(cm.focus).not.toHaveBeenCalled();
+				expect(document.activeElement).toBe(button);
+			} finally {
+				document.removeEventListener(WRITING_ANALYSIS_UPDATED_EVENT, listener);
+				button.remove();
+				cleanup();
+			}
 		});
 	});
 
-	describe('stale analysis protection', () => {
+		describe('stale analysis protection', () => {
 		function createAsyncEditor(): Editor {
 			return {
 				getValue: () => undefined
@@ -476,92 +672,4 @@ describe('WritingAnalysisManager', () => {
 		});
 	});
 
-	describe('idle scheduling', () => {
-		function createManagerWithEditor(docLength: number) {
-			const workspace = {
-				getActiveViewOfType: jest.fn(() => null),
-				on: jest.fn(() => ({ unsubscribe: () => undefined }))
-			};
-			const plugin = {
-				app: {
-					workspace,
-					vault: { cachedRead: jest.fn(async () => 'x'.repeat(docLength)) }
-				},
-				settings: {
-					writingAnalysis: {
-						enabled: true,
-						longSentenceThreshold: 25,
-						veryLongSentenceThreshold: 40
-					}
-				},
-				registerEvent: jest.fn(),
-				registerDomEvent: jest.fn(),
-				writingAnalysisStateField: {}
-			};
-			const manager = new WritingAnalysisManager(plugin as never);
-			const view = new MarkdownView(null);
-			view.file = new TFile('notes/small.md');
-			view.editor = {
-				getValue: () => 'x'.repeat(docLength),
-				cm: { state: { doc: { length: docLength } } }
-			} as unknown as Editor;
-			(manager as any).activeView = view;
-			return manager;
-		}
-
-		test('defers runAnalysis to an idle callback when the debounce fires', () => {
-			jest.useFakeTimers();
-			const idleCallback = jest.fn((cb: () => void) => {
-				// Invoke synchronously so we can observe deferral without wall time.
-				cb();
-				return 42;
-			});
-			(window as any).requestIdleCallback = idleCallback;
-			(window as any).cancelIdleCallback = jest.fn();
-
-			try {
-				const manager = createManagerWithEditor(1_000);
-				const spy = jest.spyOn(manager as any, 'runAnalysis').mockResolvedValue(undefined);
-
-				manager.scheduleAnalysis();
-				expect(spy).not.toHaveBeenCalled();
-
-				jest.advanceTimersByTime(1500);
-
-				expect(idleCallback).toHaveBeenCalledTimes(1);
-				expect(idleCallback.mock.calls[0][1]).toEqual({ timeout: 2000 });
-				expect(spy).toHaveBeenCalledTimes(1);
-			} finally {
-				delete (window as any).requestIdleCallback;
-				delete (window as any).cancelIdleCallback;
-				jest.useRealTimers();
-			}
-		});
-
-		test('cancels a pending idle callback when analyzeNow is invoked', async () => {
-			jest.useFakeTimers();
-			const cancelIdle = jest.fn();
-			(window as any).requestIdleCallback = jest.fn(() => 7);
-			(window as any).cancelIdleCallback = cancelIdle;
-
-			try {
-				const manager = createManagerWithEditor(1_000);
-				const spy = jest.spyOn(manager as any, 'runAnalysis').mockResolvedValue(undefined);
-
-				manager.scheduleAnalysis();
-				jest.advanceTimersByTime(1500);
-				expect((manager as any).pendingIdleHandle).toBe(7);
-
-				await manager.analyzeNow();
-
-				expect(cancelIdle).toHaveBeenCalledWith(7);
-				expect((manager as any).pendingIdleHandle).toBeNull();
-				expect(spy).toHaveBeenCalledTimes(1);
-			} finally {
-				delete (window as any).requestIdleCallback;
-				delete (window as any).cancelIdleCallback;
-				jest.useRealTimers();
-			}
-		});
 	});
-});

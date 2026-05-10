@@ -10,6 +10,8 @@ export interface WritingStatsPanelState {
     eligible: boolean;
     visible: boolean;
     disabledByFrontmatter: boolean;
+    oversized: boolean;
+    stale: boolean;
 }
 
 export interface WritingStatsPanelDeps {
@@ -118,16 +120,28 @@ export class WritingStatsPanel {
 
         this.bodyEl.empty();
 
-        if (state.disabledByFrontmatter) {
+        if (state.stale) {
+            const staleEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-empty' });
+            staleEl.textContent = 'This note changed since the last analysis.';
+        }
+
+        if (state.disabledByFrontmatter && !state.stale) {
             const disabledEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-empty' });
             disabledEl.textContent = 'Writing analysis is turned off for this note via frontmatter.';
             this.renderActions();
             return;
         }
 
+        if (state.oversized) {
+            const oversizedEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-empty' });
+            oversizedEl.textContent = 'This note is too large for writing analysis.';
+            this.renderActions({ showAnalyze: false });
+            return;
+        }
+
         if (!state.analysis) {
             const emptyEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-empty' });
-            emptyEl.textContent = 'Open a markdown note to analyze writing.';
+            emptyEl.textContent = state.stale ? 'Analyze to refresh the writing stats.' : 'Open a markdown note to analyze writing.';
             this.renderActions();
             return;
         }
@@ -159,19 +173,28 @@ export class WritingStatsPanel {
         this.renderActions();
     }
 
-    private renderActions(): void {
+    private renderActions(options: { showAnalyze?: boolean } = {}): void {
         if (!this.bodyEl) {
             return;
         }
 
+        const showAnalyze = options.showAnalyze ?? true;
         const actionsEl = this.bodyEl.createDiv({ cls: 'nova-writing-panel-actions' });
 
-        const analyzeButton = actionsEl.createEl('button', {
-            cls: 'nova-writing-panel-button nova-writing-panel-button--primary',
-            text: 'Analyze'
-        });
-        analyzeButton.setAttribute('type', 'button');
-        analyzeButton.setAttribute('aria-label', 'Analyze writing now');
+        if (showAnalyze) {
+            const analyzeButton = actionsEl.createEl('button', {
+                cls: 'nova-writing-panel-button nova-writing-panel-button--primary',
+                text: 'Analyze'
+            });
+            analyzeButton.setAttribute('type', 'button');
+            analyzeButton.setAttribute('aria-label', 'Analyze writing now');
+
+            this.deps.registerDomEvent(analyzeButton, 'click', (event: MouseEvent) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.deps.onAnalyze();
+            });
+        }
 
         const linterButton = actionsEl.createEl('button', {
             cls: 'nova-writing-panel-button',
@@ -179,12 +202,6 @@ export class WritingStatsPanel {
         });
         linterButton.setAttribute('type', 'button');
         linterButton.setAttribute('aria-label', 'Open prose linter');
-
-        this.deps.registerDomEvent(analyzeButton, 'click', (event: MouseEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.deps.onAnalyze();
-        });
 
         this.deps.registerDomEvent(linterButton, 'click', (event: MouseEvent) => {
             event.preventDefault();
@@ -206,6 +223,14 @@ export class WritingStatsPanel {
     private getCollapsedText(state: WritingStatsPanelState): string {
         if (state.disabledByFrontmatter) {
             return 'Disabled for this note';
+        }
+
+        if (state.oversized) {
+            return 'Too large to analyze';
+        }
+
+        if (state.stale) {
+            return 'Edited · analyze to refresh';
         }
 
         if (!state.analysis) {

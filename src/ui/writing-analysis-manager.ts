@@ -4,7 +4,7 @@
 
 import { Editor, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
 import { EditorView } from '@codemirror/view';
-import { analyzeWriting, hashContent, hasWritingAnalysisOptOut, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
+import { analyzeWriting, hashContent, hasWritingAnalysisOptOut, MAX_WRITING_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
 import { createAnalysisRunToken, isStaleAnalysisRun, type AnalysisRunToken } from '../core/writing-analysis-runner';
 import { CodeMirrorWritingHighlightManager, type WritingHighlight } from '../features/commands/ui/codemirror-decorations';
 import { PROSE_ISSUE_LABELS, type ProseIssue } from '../features/prose-linter/prose-linter-types';
@@ -21,16 +21,18 @@ export interface WritingAnalysisUpdateDetail {
     filePath: string | null;
     eligible: boolean;
     disabledByFrontmatter: boolean;
+    oversized: boolean;
+    stale: boolean;
     runToken: AnalysisRunToken;
 }
 
-export class WritingAnalysisManager {
-    private static readonly ANALYSIS_DEBOUNCE_MS = 1500;
-    // Upper bound on how long requestIdleCallback may defer the analysis past
-    // the debounce. Ensures live stats refresh within ~2s of the last keystroke
-    // even if the browser never reports an idle slice.
-    private static readonly ANALYSIS_IDLE_TIMEOUT_MS = 2000;
+interface EditorFocusSnapshot {
+    filePath: string;
+    editorDom: HTMLElement;
+    restoreFocus: () => void;
+}
 
+export class WritingAnalysisManager {
     private plugin: NovaPlugin;
     private logger = Logger.scope('WritingAnalysisManager');
     private timeoutManager = new TimeoutManager();
@@ -38,9 +40,8 @@ export class WritingAnalysisManager {
     private highlightManager: CodeMirrorWritingHighlightManager | null = null;
     private latestAnalysis: WritingAnalysis | null = null;
     private disabledByFrontmatter = false;
-    private observedEditors = new WeakSet<HTMLElement>();
-    private pendingAnalysisTimeout: number | null = null;
-    private pendingIdleHandle: number | null = null;
+    private oversizedActiveNote = false;
+    private analysisStale = false;
     private currentLeafViewType: string | null = null;
     private analysisSequence = 0;
     private activeRunToken: AnalysisRunToken = createAnalysisRunToken(null, '', 0);
@@ -64,6 +65,12 @@ export class WritingAnalysisManager {
         this.plugin.registerEvent(
             this.plugin.app.workspace.on('file-open', () => {
                 void this.refreshForActiveView(true);
+            })
+        );
+
+        this.plugin.registerEvent(
+            this.plugin.app.workspace.on('editor-change', (editor) => {
+                this.handleEditorChange(editor);
             })
         );
 
@@ -92,7 +99,7 @@ export class WritingAnalysisManager {
         }, { capture: true });
 
         this.reconcileProseLinterReviewMode();
-        void this.refreshForActiveView(true);
+        void this.refreshForActiveView(false);
     }
 
     async refreshForActiveView(force = false): Promise<void> {
@@ -109,6 +116,8 @@ export class WritingAnalysisManager {
             this.highlightManager = null;
             this.latestAnalysis = null;
             this.disabledByFrontmatter = false;
+            this.oversizedActiveNote = false;
+            this.analysisStale = false;
             this.invalidateAnalysisRun(null);
             this.clearHighlights();
             this.emitUpdate(false);
@@ -120,7 +129,6 @@ export class WritingAnalysisManager {
 
         if (viewChanged) {
             this.setupHighlightManager();
-            this.setupEditorListeners();
         }
 
         if (force || viewChanged) {
@@ -132,6 +140,8 @@ export class WritingAnalysisManager {
         if (!this.plugin.settings.writingAnalysis.enabled) {
             this.latestAnalysis = null;
             this.disabledByFrontmatter = false;
+            this.oversizedActiveNote = false;
+            this.analysisStale = false;
             this.invalidateAnalysisRun(this.activeView?.file?.path ?? null);
             this.clearHighlights();
             this.emitUpdate(this.isEligibleView(this.activeView));
@@ -141,46 +151,8 @@ export class WritingAnalysisManager {
         void this.runAnalysis();
     }
 
-    scheduleAnalysis(): void {
-        if (!this.plugin.settings.writingAnalysis.enabled || !this.isEligibleView(this.activeView)) {
-            return;
-        }
-
-        const cm = this.getEditorView();
-        if (!cm || cm.state.doc.length > MAX_LIVE_ANALYSIS_CHAR_LENGTH) {
-            // Skip live analysis on very large docs, or when CodeMirror
-            // isn't wired up yet. analyzeNow() still runs on demand.
-            return;
-        }
-
-        this.cancelPendingAnalysis();
-
-        this.pendingAnalysisTimeout = this.timeoutManager.addTimeout(() => {
-            this.pendingAnalysisTimeout = null;
-            // Defer the actual work to a browser idle slice so it yields to
-            // ongoing typing. The trailing-edge debounce alone still runs
-            // synchronously if typing resumes right as the timer fires.
-            this.pendingIdleHandle = requestIdleAnalysis(() => {
-                this.pendingIdleHandle = null;
-                void this.runAnalysis();
-            }, WritingAnalysisManager.ANALYSIS_IDLE_TIMEOUT_MS);
-        }, WritingAnalysisManager.ANALYSIS_DEBOUNCE_MS);
-    }
-
     async analyzeNow(): Promise<void> {
-        this.cancelPendingAnalysis();
         await this.runAnalysis();
-    }
-
-    private cancelPendingAnalysis(): void {
-        if (this.pendingAnalysisTimeout) {
-            this.timeoutManager.removeTimeout(this.pendingAnalysisTimeout);
-            this.pendingAnalysisTimeout = null;
-        }
-        if (this.pendingIdleHandle !== null) {
-            cancelIdleAnalysis(this.pendingIdleHandle);
-            this.pendingIdleHandle = null;
-        }
     }
 
     getLatestAnalysis(): WritingAnalysis | null {
@@ -205,6 +177,14 @@ export class WritingAnalysisManager {
 
     isDisabledByFrontmatter(): boolean {
         return this.disabledByFrontmatter;
+    }
+
+    isActiveFileOversized(): boolean {
+        return this.oversizedActiveNote;
+    }
+
+    isAnalysisStale(): boolean {
+        return this.analysisStale;
     }
 
     getActiveRunToken(): AnalysisRunToken {
@@ -250,12 +230,7 @@ export class WritingAnalysisManager {
 
     cleanup(): void {
         this.timeoutManager.clearAll();
-        this.pendingAnalysisTimeout = null;
         this.pendingReviewModeReconcileTimeout = null;
-        if (this.pendingIdleHandle !== null) {
-            cancelIdleAnalysis(this.pendingIdleHandle);
-            this.pendingIdleHandle = null;
-        }
         this.clearHighlights();
         this.proseLinterHighlights = null;
         this.proseLinterHighlightFilePath = null;
@@ -263,17 +238,24 @@ export class WritingAnalysisManager {
         this.activeView = null;
         this.highlightManager = null;
         this.latestAnalysis = null;
+        this.oversizedActiveNote = false;
+        this.analysisStale = false;
         this.invalidateAnalysisRun(null);
     }
 
     private async runAnalysis(): Promise<void> {
+        const focusSnapshot = this.captureEditorFocusSnapshot();
+
         if (!this.plugin.settings.writingAnalysis.enabled || !this.isEligibleView(this.activeView)) {
             this.latestAnalysis = null;
             this.disabledByFrontmatter = false;
+            this.oversizedActiveNote = false;
+            this.analysisStale = false;
             this.invalidateAnalysisRun(this.activeView?.file?.path ?? null);
             this.clearProseLinterHighlights(this.activeView?.file?.path);
             this.clearHighlights();
             this.emitUpdate(false);
+            this.restoreEditorFocusIfLost(focusSnapshot);
             return;
         }
 
@@ -282,26 +264,47 @@ export class WritingAnalysisManager {
             const file = activeView.file;
             if (!file) {
                 this.latestAnalysis = null;
+                this.disabledByFrontmatter = false;
+                this.oversizedActiveNote = false;
+                this.analysisStale = false;
                 this.invalidateAnalysisRun(null);
                 this.clearHighlights();
                 this.emitUpdate(false);
+                this.restoreEditorFocusIfLost(focusSnapshot);
                 return;
             }
             const runStartToken = this.startAnalysisRun(file.path);
 
+            const editorLength = this.getEditorDocumentLength();
+            if (editorLength !== null && editorLength > MAX_WRITING_ANALYSIS_CHAR_LENGTH) {
+                this.markActiveFileOversized(runStartToken);
+                this.restoreEditorFocusIfLost(focusSnapshot);
+                return;
+            }
+
             const content = activeView.editor?.getValue() ?? await this.plugin.app.vault.cachedRead(file);
+            if (content.length > MAX_WRITING_ANALYSIS_CHAR_LENGTH) {
+                this.markActiveFileOversized(runStartToken);
+                this.restoreEditorFocusIfLost(focusSnapshot);
+                return;
+            }
+
             const candidateToken = createAnalysisRunToken(file.path, hashContent(content), runStartToken.sequence);
             this.clearStaleProseLinterHighlights(candidateToken);
             if (this.isCandidateRunStale(candidateToken, content)) {
+                this.restoreEditorFocusIfLost(focusSnapshot);
                 return;
             }
 
             this.disabledByFrontmatter = hasWritingAnalysisOptOut(content);
             if (this.disabledByFrontmatter) {
                 this.latestAnalysis = null;
+                this.oversizedActiveNote = false;
+                this.analysisStale = false;
                 this.activeRunToken = candidateToken;
                 this.clearHighlights();
                 this.emitUpdate(true);
+                this.restoreEditorFocusIfLost(focusSnapshot);
                 return;
             }
 
@@ -310,14 +313,45 @@ export class WritingAnalysisManager {
                 veryLongSentenceThreshold: this.plugin.settings.writingAnalysis.veryLongSentenceThreshold
             });
             if (this.isCandidateRunStale(candidateToken, content)) {
+                this.restoreEditorFocusIfLost(focusSnapshot);
                 return;
             }
 
             this.activeRunToken = candidateToken;
+            this.oversizedActiveNote = false;
+            this.analysisStale = false;
             this.applyHighlights();
             this.emitUpdate(true);
+            this.restoreEditorFocusIfLost(focusSnapshot);
         } catch (error) {
             this.logger.error('Failed to analyze writing:', error);
+            this.restoreEditorFocusIfLost(focusSnapshot);
+        }
+    }
+
+    private markActiveFileOversized(runToken?: AnalysisRunToken): void {
+        const filePath = this.activeView?.file?.path ?? null;
+        const alreadyOversized = this.oversizedActiveNote &&
+            this.activeRunToken.filePath === filePath &&
+            !this.latestAnalysis &&
+            !this.disabledByFrontmatter;
+
+        this.latestAnalysis = null;
+        this.disabledByFrontmatter = false;
+        this.oversizedActiveNote = true;
+        this.analysisStale = false;
+
+        if (runToken) {
+            this.activeRunToken = runToken;
+        } else if (!alreadyOversized) {
+            this.startAnalysisRun(filePath);
+        }
+
+        this.clearProseLinterHighlights(filePath ?? undefined);
+        this.clearHighlights();
+
+        if (!alreadyOversized || runToken) {
+            this.emitUpdate(true);
         }
     }
 
@@ -328,9 +362,28 @@ export class WritingAnalysisManager {
                 filePath: this.activeView?.file?.path ?? null,
                 eligible,
                 disabledByFrontmatter: this.disabledByFrontmatter,
+                oversized: this.oversizedActiveNote,
+                stale: this.analysisStale,
                 runToken: this.activeRunToken
             } satisfies WritingAnalysisUpdateDetail
         }));
+    }
+
+    private handleEditorChange(editor: Editor): void {
+        if (
+            !this.plugin.settings.writingAnalysis.enabled ||
+            !this.isEligibleView(this.activeView) ||
+            editor !== this.activeView.editor ||
+            this.analysisStale ||
+            (!this.latestAnalysis && !this.disabledByFrontmatter)
+        ) {
+            return;
+        }
+
+        this.analysisStale = true;
+        this.clearProseLinterHighlights(this.activeView.file?.path);
+        this.clearHighlights();
+        this.emitUpdate(true);
     }
 
     private applyHighlights(): void {
@@ -435,25 +488,71 @@ export class WritingAnalysisManager {
         this.highlightManager = new CodeMirrorWritingHighlightManager(cm, this.plugin.writingAnalysisStateField);
     }
 
-    private setupEditorListeners(): void {
-        if (!this.activeView) {
-            return;
-        }
-
-        const editorEl = this.activeView.containerEl.querySelector<HTMLElement>('.cm-editor');
-        if (!editorEl || this.observedEditors.has(editorEl)) {
-            return;
-        }
-
-        this.observedEditors.add(editorEl);
-        this.plugin.registerDomEvent(editorEl, 'input', () => {
-            this.scheduleAnalysis();
-        });
-    }
-
     private getEditorView(): EditorView | null {
         const editorWithCm = this.activeView?.editor as { cm?: EditorView } | undefined;
         return editorWithCm?.cm ?? null;
+    }
+
+    private getEditorDocumentLength(): number | null {
+        const cm = this.getEditorView();
+        return typeof cm?.state.doc.length === 'number' ? cm.state.doc.length : null;
+    }
+
+    private captureEditorFocusSnapshot(): EditorFocusSnapshot | null {
+        const activeView = this.activeView;
+        const filePath = activeView?.file?.path;
+        const cm = this.getEditorView();
+        const editorDom = cm?.dom;
+        const focusedElement = document.activeElement;
+
+        if (!filePath || !cm || !(editorDom instanceof HTMLElement) || !focusedElement || !editorDom.contains(focusedElement)) {
+            return null;
+        }
+
+        return {
+            filePath,
+            editorDom,
+            restoreFocus: () => cm.focus()
+        };
+    }
+
+    private restoreEditorFocusIfLost(snapshot: EditorFocusSnapshot | null): void {
+        if (!snapshot || this.activeView?.file?.path !== snapshot.filePath) {
+            return;
+        }
+
+        const activeElement = document.activeElement;
+        if (!activeElement || snapshot.editorDom.contains(activeElement) || this.hasMeaningfulFocus(activeElement)) {
+            return;
+        }
+
+        snapshot.restoreFocus();
+    }
+
+    private hasMeaningfulFocus(element: Element): boolean {
+        if (element === document.body || element === document.documentElement) {
+            return false;
+        }
+
+        const tagName = element.tagName.toLowerCase();
+        if (
+            tagName === 'input' ||
+            tagName === 'textarea' ||
+            tagName === 'select' ||
+            tagName === 'button' ||
+            tagName === 'a' ||
+            (element as HTMLElement).isContentEditable
+        ) {
+            return true;
+        }
+
+        return Boolean(element.closest(
+            '.nova-sidebar-container, ' +
+            '.nova-prose-linter-container, ' +
+            '.workspace-tab-header, ' +
+            '.workspace-ribbon, ' +
+            '.nav-files-container'
+        ));
     }
 
     private isEligibleView(view: MarkdownView | null): view is MarkdownView {
@@ -480,7 +579,7 @@ export class WritingAnalysisManager {
             this.setProseLinterReviewActive(false);
         }
 
-        void this.refreshForActiveView(true);
+        void this.refreshForActiveView(false);
     }
 
     private handleWorkspaceInteraction(event: Event): void {
@@ -734,29 +833,4 @@ export class WritingAnalysisManager {
         const currentToken = createAnalysisRunToken(currentFilePath, hashContent(currentContent), this.analysisSequence);
         return isStaleAnalysisRun(currentToken, candidateToken);
     }
-}
-
-interface IdleCallbackWindow {
-    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-    cancelIdleCallback?: (handle: number) => void;
-}
-
-function requestIdleAnalysis(callback: () => void, timeoutMs: number): number {
-    const w = window as unknown as IdleCallbackWindow;
-    if (typeof w.requestIdleCallback === 'function') {
-        return w.requestIdleCallback(callback, { timeout: timeoutMs });
-    }
-    // Fallback for environments without requestIdleCallback (e.g. jsdom in
-    // tests). setTimeout(0) still yields a task, preserving the same ordering
-    // contract the callers depend on.
-    return window.setTimeout(callback, 0);
-}
-
-function cancelIdleAnalysis(handle: number): void {
-    const w = window as unknown as IdleCallbackWindow;
-    if (typeof w.cancelIdleCallback === 'function') {
-        w.cancelIdleCallback(handle);
-        return;
-    }
-    window.clearTimeout(handle);
 }

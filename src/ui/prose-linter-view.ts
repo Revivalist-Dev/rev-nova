@@ -5,7 +5,7 @@
 import { Editor, ItemView, MarkdownView, Platform, TFile, WorkspaceLeaf } from 'obsidian';
 import type NovaPlugin from '../../main';
 import { VIEW_TYPE_PROSE_LINTER } from '../constants';
-import { analyzeWriting, hashContent, MAX_LIVE_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
+import { analyzeWriting, hashContent, MAX_PROSE_LINTER_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
 import { createAnalysisRunToken } from '../core/writing-analysis-runner';
 import { buildProseIssues } from '../features/prose-linter/prose-linter-issues';
 import { createProseIssuePage, PROSE_LINTER_INITIAL_VISIBLE_COUNT } from '../features/prose-linter/prose-linter-rendering';
@@ -83,6 +83,7 @@ const PROSE_LINTER_CATEGORY_GROUPS: ProseLinterCategoryGroup[] = [
 		plural: 'complex words'
 	}
 ];
+const PROSE_LINTER_MAX_EDITOR_HIGHLIGHTS = 500;
 
 export class ProseLinterView extends ItemView {
 	private readonly plugin: NovaPlugin;
@@ -179,7 +180,7 @@ export class ProseLinterView extends ItemView {
 			this.lastContentHash = contentHash;
 		}
 
-		if (!forceOversized && content.length > MAX_LIVE_ANALYSIS_CHAR_LENGTH) {
+		if (!forceOversized && content.length > MAX_PROSE_LINTER_ANALYSIS_CHAR_LENGTH) {
 			this.state = {
 				file,
 				content,
@@ -493,7 +494,7 @@ export class ProseLinterView extends ItemView {
 			this.plugin.writingAnalysisManager?.clearProseLinterHighlights(this.state.file?.path);
 			return;
 		}
-		const issues = this.createIssuePage(Number.MAX_SAFE_INTEGER).issues;
+		const issues = this.createIssuePage(PROSE_LINTER_MAX_EDITOR_HIGHLIGHTS).issues;
 		if (issues.length === 0) {
 			this.plugin.writingAnalysisManager?.setProseLinterIssues(this.state.file.path, hashContent(this.state.content), []);
 		} else {

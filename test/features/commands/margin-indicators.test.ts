@@ -4,9 +4,6 @@
  */
 
 import { MarginIndicators } from '../../../src/features/commands/ui/MarginIndicators';
-import { SmartVariableResolver } from '../../../src/features/commands/core/SmartVariableResolver';
-import { CommandEngine } from '../../../src/features/commands/core/CommandEngine';
-import { SmartTimingEngine } from '../../../src/features/commands/core/SmartTimingEngine';
 import type { SmartContext } from '../../../src/features/commands/types';
 
 // Local interface for testing (matches the one in MarginIndicators.ts)
@@ -304,6 +301,77 @@ describe('MarginIndicators', () => {
         test('clearAnalysisCache remains a no-op compatibility method', () => {
             expect(() => marginIndicators.clearAnalysisCache()).not.toThrow();
         });
+
+        test('coalesces delayed marker scans from scroll triggers', () => {
+            jest.useFakeTimers();
+            const analyzeSpy = jest.spyOn(marginIndicators as any, 'analyzeCurrentContext').mockImplementation(() => undefined);
+
+            try {
+                (marginIndicators as any).scheduleIndicatorAnalysis(3000);
+                (marginIndicators as any).scheduleIndicatorAnalysis(3000);
+                (marginIndicators as any).scheduleIndicatorAnalysis(3000);
+
+                jest.advanceTimersByTime(2999);
+                expect(analyzeSpy).not.toHaveBeenCalled();
+
+                jest.advanceTimersByTime(1);
+                expect(analyzeSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                jest.useRealTimers();
+                analyzeSpy.mockRestore();
+            }
+        });
+
+        test('does not register editor input listeners', () => {
+            const editorEl = document.createElement('div');
+            const scrollerEl = document.createElement('div');
+            mockView.containerEl.querySelector.mockImplementation((selector: string) => {
+                if (selector === '.cm-editor') return editorEl;
+                if (selector === '.cm-scroller') return scrollerEl;
+                return null;
+            });
+            (marginIndicators as any).activeEditor = mockEditor;
+            (marginIndicators as any).activeView = mockView;
+
+            (marginIndicators as any).setupEditorListeners();
+
+            const editorInputListeners = mockPlugin.registerDomEvent.mock.calls.filter(([element, eventName]: [HTMLElement, string]) => {
+                return element === editorEl && eventName === 'input';
+            });
+
+            expect(editorInputListeners).toHaveLength(0);
+            expect(mockVariableResolver.buildSmartContext).not.toHaveBeenCalled();
+            expect(mockSmartTimingEngine.onEditorInput).not.toHaveBeenCalled();
+        });
+
+        test('does not register duplicate editor listeners for the same CodeMirror elements', () => {
+            const editorEl = document.createElement('div');
+            const scrollerEl = document.createElement('div');
+            mockView.containerEl.querySelector.mockImplementation((selector: string) => {
+                if (selector === '.cm-editor') return editorEl;
+                if (selector === '.cm-scroller') return scrollerEl;
+                return null;
+            });
+            (marginIndicators as any).activeEditor = mockEditor;
+            (marginIndicators as any).activeView = mockView;
+
+            (marginIndicators as any).setupEditorListeners();
+            (marginIndicators as any).setupEditorListeners();
+
+            const editorInputListeners = mockPlugin.registerDomEvent.mock.calls.filter(([element, eventName]: [HTMLElement, string]) => {
+                return element === editorEl && eventName === 'input';
+            });
+            const editorClickListeners = mockPlugin.registerDomEvent.mock.calls.filter(([element, eventName]: [HTMLElement, string]) => {
+                return element === editorEl && eventName === 'click';
+            });
+            const scrollerListeners = mockPlugin.registerDomEvent.mock.calls.filter(([element, eventName]: [HTMLElement, string]) => {
+                return element === scrollerEl && eventName === 'scroll';
+            });
+
+            expect(editorInputListeners).toHaveLength(0);
+            expect(editorClickListeners).toHaveLength(1);
+            expect(scrollerListeners).toHaveLength(1);
+        });
     });
 
     describe('Integration Tests', () => {
@@ -595,7 +663,7 @@ describe('MarginIndicators', () => {
         });
 
         describe('Document Type Handling', () => {
-            test('should proceed with analysis for all document types', async () => {
+            test('does not build document-type context during marker-only analysis', () => {
                 // Mock workspace to return mock view
                 mockPlugin.app.workspace.getActiveViewOfType.mockReturnValue(mockView);
 
@@ -606,24 +674,12 @@ describe('MarginIndicators', () => {
                 (marginIndicators as any).activeEditor = mockEditor;
                 (marginIndicators as any).activeView = mockView;
 
-                // Mock context with academic document type
-                mockVariableResolver.buildSmartContext.mockReturnValueOnce({
-                    selection: '',
-                    document: '# Research Paper\n\nThis is an academic paper.',
-                    title: 'Research Paper',
-                    documentType: 'academic',
-                    cursorContext: { before: '', after: '' },
-                    metrics: { wordCount: 8, paragraphCount: 1 },
-                    audienceLevel: 'expert'
-                });
-
-                // Spy on SmartTimingEngine.setDocumentType
                 const setDocTypeSpy = jest.spyOn(mockSmartTimingEngine, 'setDocumentType');
 
-                // Should proceed and set document type
                 (marginIndicators as any).analyzeCurrentContext();
 
-                expect(setDocTypeSpy).toHaveBeenCalledWith('academic');
+                expect(mockVariableResolver.buildSmartContext).not.toHaveBeenCalled();
+                expect(setDocTypeSpy).not.toHaveBeenCalled();
             });
         });
 

@@ -27,6 +27,7 @@ import {
 import { ContextQuickPanel } from './context-quick-panel';
 import { WRITING_ANALYSIS_UPDATED_EVENT, type WritingAnalysisUpdateDetail } from './writing-analysis-manager';
 import { WritingStatsPanel } from './writing-stats-panel';
+import { MAX_WRITING_ANALYSIS_CHAR_LENGTH } from '../core/writing-analysis';
 
 export const VIEW_TYPE_NOVA_SIDEBAR = 'nova-sidebar';
 
@@ -91,6 +92,7 @@ export class NovaSidebarView extends ItemView {
 	// Performance optimization - timing constants
 	private static readonly SCROLL_DELAY_MS = 50;
 	private static readonly FOCUS_DELAY_MS = 150;
+	private static readonly EDIT_CONTEXT_REFRESH_SUPPRESSION_MS = 30_000;
 
 	// Thinking phrase rotation intervals - WeakMap for proper cleanup
 	private thinkingRotationIntervals = new WeakMap<HTMLElement, number>();
@@ -99,6 +101,7 @@ export class NovaSidebarView extends ItemView {
 	// Event listener cleanup is handled automatically by registerDomEvent
 	private timeoutManager = new TimeoutManager();
 	private pendingContextRefresh: ReturnType<typeof TimeoutManager.prototype.addTimeout> | null = null;
+	private lastEditorChangeAt = 0;
 
 	constructor(leaf: WorkspaceLeaf, plugin: NovaPlugin) {
 		super(leaf);
@@ -207,10 +210,8 @@ export class NovaSidebarView extends ItemView {
 		// Register cursor position tracking for the active editor
 		this.registerEvent(
 			this.app.workspace.on('editor-change', (editor) => {
+				this.lastEditorChangeAt = Date.now();
 				this.trackCursorPosition(editor);
-				// Schedule writing analysis on all document changes (including undo/redo,
-				// which don't fire DOM input events caught by WritingAnalysisManager)
-				this.plugin.writingAnalysisManager?.scheduleAnalysis();
 			})
 		);
 		
@@ -996,11 +997,24 @@ export class NovaSidebarView extends ItemView {
 		this.pendingContextRefresh = this.timeoutManager.addTimeout(() => {
 			this.pendingContextRefresh = null;
 			if (this.currentFile) {
+				if (this.shouldSkipLiveRefreshForLargeFile(this.currentFile) || this.wasEditorChangedRecently()) {
+					this.updateContextIndicator();
+					this.updateTokenDisplay();
+					return;
+				}
 				void this.contextManager.rebuildAutoContext(this.currentFile).then(() => {
 					return this.refreshContext();
 				});
 			}
 		}, 1000);
+	}
+
+	private shouldSkipLiveRefreshForLargeFile(file: TFile): boolean {
+		return (file.stat?.size ?? 0) > MAX_WRITING_ANALYSIS_CHAR_LENGTH;
+	}
+
+	private wasEditorChangedRecently(): boolean {
+		return Date.now() - this.lastEditorChangeAt < NovaSidebarView.EDIT_CONTEXT_REFRESH_SUPPRESSION_MS;
 	}
 
 	private async refreshContext(): Promise<void> {
@@ -1785,6 +1799,8 @@ USER REQUEST: ${processedMessage}`;
 			filePath: manager?.getActiveFile()?.path ?? null,
 			eligible: manager?.isEligibleActiveFile() ?? false,
 			disabledByFrontmatter: manager?.isDisabledByFrontmatter() ?? false,
+			oversized: manager?.isActiveFileOversized() ?? false,
+			stale: manager?.isAnalysisStale() ?? false,
 			runToken: manager.getActiveRunToken()
 		};
 
@@ -1792,7 +1808,9 @@ USER REQUEST: ${processedMessage}`;
 			analysis: currentDetail.analysis,
 			eligible: currentDetail.eligible,
 			visible: this.plugin.settings.writingAnalysis.enabled && this.plugin.settings.writingAnalysis.showStatsPanel,
-			disabledByFrontmatter: currentDetail.disabledByFrontmatter
+			disabledByFrontmatter: currentDetail.disabledByFrontmatter,
+			oversized: currentDetail.oversized,
+			stale: currentDetail.stale
 		});
 	}
 
