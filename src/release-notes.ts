@@ -14,6 +14,20 @@ export interface ReleaseNotesEntry {
 
 export const RELEASE_NOTES: Record<string, string> = {
 	// Add entries before running `npm version`. The /release command handles this.
+	'1.6.1': [
+		'## What\'s New in Nova 1.6.1',
+		'',
+		'### Ollama Improvements',
+		'',
+		'- **Ollama models now appear in the main model picker.** Testing your Ollama connection refreshes Nova\'s local model list, so configured Ollama models are available from the sidebar picker.',
+		'- **Ollama settings are clearer.** The settings panel now explains that adding or removing local Ollama models requires testing the connection again to refresh the picker.',
+		'- **Existing Ollama setups keep working.** Nova preserves your saved Ollama model during migration, even before the refreshed local model list is available.',
+		'',
+		'### Bug Fixes',
+		'',
+		'- **Reflective questions no longer trigger edit mode.** Messages like "I wish I knew..." now route to chat instead of being misread as edit requests.',
+		'- **Long notes no longer hit an obsolete prompt-length guard.** Nova removed the old 10,000-character generated-prompt limit that could block short requests when the active note was large.',
+	].join('\n'),
 	'1.6.0': [
 		'## What\'s New in Nova 1.6.0',
 		'',
@@ -58,17 +72,6 @@ export const RELEASE_NOTES: Record<string, string> = {
 		'',
 		'### Bug Fixes',
 		'- **Further reduced typing freezes in long notes.** 1.5.2 cut the problem back but didn\'t eliminate it. The scheduler now defers analysis to a browser idle slice once the debounce fires, so if you keep typing past the debounce, the work yields to your keystrokes instead of blocking them. The analyzer itself also does less work per run: duplicate passive-voice scans were removed, position lookups are deduped, and lines with no inline code skip an unnecessary per-character copy.',
-	].join('\n'),
-	'1.5.2': [
-		'## What\'s New in Nova 1.5.2',
-		'',
-		'### Bug Fixes',
-		'- **Typing no longer freezes in long notes.** The Writing Analysis subsystem was running a full-document scan after every short typing pause and accumulating memory in an unbounded cache. In long drafts this produced momentary keyboard unresponsiveness that resolved on its own or required a plugin reload. The cache is now bounded to a single entry, and the analysis debounce was raised from 500 ms to 1500 ms so ordinary mid-word pauses no longer trigger re-analysis.',
-		'- **Very large documents skip live analysis.** Documents over 50,000 characters no longer run analysis on every keystroke, keeping the editor responsive while editing book-length drafts. Use the **Analyze** button in the sidebar to run analysis on demand.',
-		'',
-		'### Under the Hood',
-		'- Tightened the Writing Analysis scheduling path so it skips cleanly when the editor isn\'t ready, instead of scheduling work against a not-yet-wired-up view.',
-		'- Replaced an inline style assignment on the context budget bar with a CSS custom property, aligning with the rest of the plugin\'s Obsidian compliance patterns.',
 	].join('\n'),
 };
 

@@ -14,7 +14,7 @@ describe('release notes helpers', () => {
 	it('does not include future authored release notes', () => {
 		const notes = getRecentReleaseNotes('1.5.4');
 
-		expect(notes.map(note => note.version)).toEqual(['1.5.4', '1.5.3', '1.5.2']);
+		expect(notes.map(note => note.version)).toEqual(['1.5.4', '1.5.3']);
 	});
 
 	it('honors a custom release count', () => {
