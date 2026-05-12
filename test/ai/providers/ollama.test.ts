@@ -27,14 +27,45 @@ describe('OllamaProvider', () => {
 	});
 
 	test('normalizes trailing slashes for availability checks', async () => {
-		(requestUrl as jest.Mock).mockResolvedValue({ status: 200 });
+		(requestUrl as jest.Mock).mockResolvedValue({ status: 200, json: { models: [] } });
 
 		await expect(provider.isAvailable()).resolves.toBe(true);
 		expect(requestUrl).toHaveBeenCalledWith({
 			url: 'http://localhost:11434/api/tags',
 			method: 'GET',
-			headers: { 'Content-Type': 'application/json' }
+			headers: { 'Content-Type': 'application/json' },
+			throw: false
 		});
+	});
+
+	test('checks availability without requiring a configured model', async () => {
+		config.model = '';
+		(requestUrl as jest.Mock).mockResolvedValue({ status: 200, json: { models: [] } });
+
+		await expect(provider.isAvailable()).resolves.toBe(true);
+	});
+
+	test('returns false when availability check cannot reach Ollama', async () => {
+		(requestUrl as jest.Mock).mockRejectedValue(new Error('Connection refused'));
+
+		await expect(provider.isAvailable()).resolves.toBe(false);
+	});
+
+	test('fetches available model names from Ollama tags', async () => {
+		(requestUrl as jest.Mock).mockResolvedValue({
+			status: 200,
+			json: {
+				models: [
+					{ name: 'llama3.1:8b' },
+					{ name: 'qwen3:14b' },
+					{ name: 'llama3.1:8b' },
+					{ name: ' ' },
+					{ digest: 'missing-name' }
+				]
+			}
+		});
+
+		await expect(provider.getAvailableModels()).resolves.toEqual(['llama3.1:8b', 'qwen3:14b']);
 	});
 
 	test('normalizes trailing slashes for chat requests', async () => {

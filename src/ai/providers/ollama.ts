@@ -33,19 +33,51 @@ export class OllamaProvider implements AIProvider {
 	}
 
 	async isAvailable(): Promise<boolean> {
-		if (!this.config.model) return false; // Require model to be set
-		
 		try {
-			const baseUrl = this.getBaseUrl();
-			const response = await requestUrl({
-				url: `${baseUrl}/api/tags`,
-				method: 'GET',
-				headers: { 'Content-Type': 'application/json' }
-			});
-			return response.status === 200;
+			await this.getAvailableModels();
+			return true;
 		} catch {
 			return false;
 		}
+	}
+
+	async getAvailableModels(): Promise<string[]> {
+		const baseUrl = this.getBaseUrl();
+		const response = await requestUrl({
+			url: `${baseUrl}/api/tags`,
+			method: 'GET',
+			headers: { 'Content-Type': 'application/json' },
+			throw: false
+		});
+
+		if (response.status !== 200) {
+			throw new Error(`Ollama API error: ${response.status} - ${response.text}`);
+		}
+
+		return this.extractModelNames(response.json);
+	}
+
+	private extractModelNames(responseJson: unknown): string[] {
+		const models = (responseJson as { models?: unknown }).models;
+		if (!Array.isArray(models)) {
+			return [];
+		}
+
+		const names = models.flatMap((model): string[] => {
+			if (!model || typeof model !== 'object') {
+				return [];
+			}
+
+			const name = (model as { name?: unknown }).name;
+			if (typeof name !== 'string') {
+				return [];
+			}
+
+			const trimmedName = name.trim();
+			return trimmedName ? [trimmedName] : [];
+		});
+
+		return Array.from(new Set(names));
 	}
 
 	async generateText(prompt: string, options?: AIGenerationOptions): Promise<string> {

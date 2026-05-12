@@ -64,7 +64,8 @@ describe('IntentDetector', () => {
                 'I\'m trying to understand this',
                 'I\'ve been struggling lately',
                 'I was wondering about this',
-                'I feel like this is important'
+                'I feel like this is important',
+                'I wish I knew the difficulty rating of those hikes'
             ];
 
             personalInputs.forEach(input => {

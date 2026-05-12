@@ -328,10 +328,6 @@ ACTION: UPDATE METADATA
             issues.push('User prompt is empty');
         }
 
-        if (prompt.userPrompt.length > 10000) {
-            issues.push('User prompt is too long (>10000 characters)');
-        }
-
         return {
             valid: issues.length === 0,
             issues

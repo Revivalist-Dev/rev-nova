@@ -38,6 +38,8 @@ export interface ProviderConfig {
 	apiKey?: string;
 	baseUrl?: string;
 	model?: string;
+	models?: string[];
+	modelsLastRefreshed?: string | null;
 	contextSize?: number;
 	status?: {
 		state: 'connected' | 'error' | 'not-configured' | 'untested' | 'testing';

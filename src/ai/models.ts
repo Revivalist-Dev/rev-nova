@@ -42,6 +42,32 @@ export function getProviderTypeForModel(modelName: string, settings?: NovaSettin
 	return null;
 }
 
+function addUniqueModel(models: ModelDefinition[], value: string | undefined, label?: string): void {
+	const modelValue = value?.trim();
+	if (!modelValue || models.some(model => model.value === modelValue)) {
+		return;
+	}
+
+	models.push({ value: modelValue, label: label || modelValue });
+}
+
+function getOllamaModels(settings?: NovaSettings): ModelDefinition[] {
+	const ollamaSettings = settings?.aiProviders?.ollama;
+	const cachedModels = Array.isArray(ollamaSettings?.models) ? ollamaSettings.models : [];
+	const savedModel = ollamaSettings?.model?.trim();
+	const models: ModelDefinition[] = [];
+
+	for (const model of cachedModels) {
+		addUniqueModel(models, model);
+	}
+
+	if (savedModel) {
+		addUniqueModel(models, savedModel);
+	}
+
+	return models;
+}
+
 /**
  * Get available models for a provider
  */
@@ -79,12 +105,7 @@ export function getAvailableModels(providerType: string, settings?: NovaSettings
 				{ value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' }
 			];
 		case 'ollama': {
-			// Return the configured model from settings
-			const ollamaModel = settings?.aiProviders?.ollama?.model;
-			if (ollamaModel && ollamaModel.trim()) {
-				return [{ value: ollamaModel, label: ollamaModel }];
-			}
-			return [];
+			return getOllamaModels(settings);
 		}
 		default:
 			return [];

@@ -200,9 +200,9 @@ export class AIIntentClassifier {
         // Check for subtle editing patterns that fast classification might miss
         const subtleEditingPatterns = [
             /\bmake\s+(this|it|that)\s+(better|clearer|shorter|longer|more|less)\b/i,
-            /\b(this|it|that)\s+(needs|requires|should|could)\s+(to\s+be\s+)?(better|clearer|improved|fixed|changed)\b/i,
+            /\b(this|it|that)\s+(needs|requires|should|could)\s+((?:to\s+)?be\s+)?(better|clearer|improved|fixed|changed|improvement|work)\b/i,
             /\b(here|there)\s+(is|are)\s+(some|too|not)\s+(issues?|problems?|errors?)\b/i,
-            /\blet\s*'?s\s+(add|change|fix|improve|make|create)\b/i,
+            /\b(?:let\s*'?s|let\s+us)\s+(add|change|fix|improve|make|create)\b/i,
         ];
 
         for (const pattern of subtleEditingPatterns) {
@@ -216,7 +216,7 @@ export class AIIntentClassifier {
 
         // Check for conversational patterns
         const conversationalPatterns = [
-            /\b(i\s+(think|feel|believe|wonder|notice|see|realize|understand))\b/i,
+            /\b(i\s+(think|feel|believe|wonder|wish|notice|see|realize|understand))\b/i,
             /\b(it\s+(seems|appears|looks|feels)\s+like)\b/i,
             /\b(reminds\s+me|makes\s+me\s+think)\b/i,
             /\b(lately|recently|nowadays|these\s+days)\b/i,
@@ -226,12 +226,6 @@ export class AIIntentClassifier {
             if (pattern.test(userInput)) {
                 return 'CHAT';
             }
-        }
-
-        // For truly ambiguous cases, use context clues
-        // Favor CONTENT for inputs with command-like structure
-        if (/^[a-z]+\s+[a-z]/i.test(lowerInput) && !this.isQuestion(lowerInput)) {
-            return 'CONTENT';
         }
 
         // Default to CHAT for safety (prevents unwanted edits)

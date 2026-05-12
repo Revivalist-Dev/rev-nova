@@ -79,6 +79,10 @@ export interface NovaSettings {
 	};
 }
 
+type ConnectionTestResult = {
+	ollamaModelNames?: string[];
+};
+
 export const DEFAULT_SETTINGS: NovaSettings = {
 	aiProviders: {
 		claude: {
@@ -94,6 +98,8 @@ export const DEFAULT_SETTINGS: NovaSettings = {
 		ollama: {
 			baseUrl: 'http://localhost:11434',
 			model: '',
+			models: [],
+			modelsLastRefreshed: null,
 			contextSize: 32000
 		}
 	},
@@ -580,16 +586,17 @@ export class NovaSettingTab extends PluginSettingTab {
 	}
 
 	private createTestConnectionButton(container: HTMLElement, provider: 'claude' | 'openai' | 'google' | 'ollama'): void {
+		const isOllama = provider === 'ollama';
 		const setting = new Setting(container)
 			.setName('Connection status')
-			.setDesc('Test your API connection');
+			.setDesc(isOllama ? 'Test Ollama and refresh the model picker' : 'Test your API connection');
 
 		// Create status indicator first (to the left)
 		const statusContainer = setting.controlEl.createDiv({ cls: 'nova-connection-status-container' });
 		
 		setting.addButton(button => {
-			button.setButtonText('Test connection')
-				.setTooltip(`Test ${provider} connection`)
+			button.setButtonText(isOllama ? 'Test connection and refresh models' : 'Test connection')
+				.setTooltip(isOllama ? 'Test Ollama connection and refresh local models' : `Test ${provider} connection`)
 				.onClick(async () => {
 					await this.testProviderConnection(provider, button.buttonEl, statusContainer);
 				});
@@ -604,6 +611,7 @@ export class NovaSettingTab extends PluginSettingTab {
 	private async testProviderConnection(provider: 'claude' | 'openai' | 'google' | 'ollama', buttonEl: HTMLElement, statusContainer: HTMLElement): Promise<void> {
 		const originalText = buttonEl.textContent || 'Test Connection';
 		const button = buttonEl as HTMLButtonElement;
+		let shouldRefreshSettingsContent = false;
 		
 		// Force enable and set initial state
 		button.disabled = false;
@@ -641,18 +649,15 @@ export class NovaSettingTab extends PluginSettingTab {
 			// Test the connection using the plugin's provider system
 			const testPromise = this.performRealConnectionTest(provider);
 			
-			await Promise.race([testPromise, timeoutPromise]);
+			const testResult = await Promise.race([testPromise, timeoutPromise]);
+			const successMessage = provider === 'ollama'
+				? this.updateOllamaModelCache(testResult.ollamaModelNames || [])
+				: 'Connected successfully';
 			
 			// Update provider status to connected
-			await this.updateProviderStatus(provider, 'connected', 'Connected successfully');
-			this.setConnectionStatus(statusContainer, 'success', '● Connected');
-			
-			// For Ollama, if a model is configured, automatically select it
-			if (provider === 'ollama' && this.plugin.settings.aiProviders.ollama.model) {
-				const platform = Platform.isMobile ? 'mobile' : 'desktop';
-				this.plugin.settings.platformSettings[platform].selectedModel = this.plugin.settings.aiProviders.ollama.model;
-				await this.plugin.saveSettings();
-			}
+			await this.updateProviderStatus(provider, 'connected', successMessage);
+			this.setConnectionStatus(statusContainer, 'success', 'Connected');
+			shouldRefreshSettingsContent = provider === 'ollama';
 			
 			// Emit event to notify sidebar of provider configuration
 			document.dispatchEvent(new CustomEvent('nova-provider-configured', { 
@@ -698,6 +703,9 @@ export class NovaSettingTab extends PluginSettingTab {
 			// Clear backup timer and restore button
 			this.timeoutManager.removeTimeout(backupTimer);
 			restoreButton();
+			if (shouldRefreshSettingsContent) {
+				this.updateTabContent();
+			}
 		}
 	}
 
@@ -767,7 +775,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		}
 	}
 
-	private async performRealConnectionTest(provider: 'claude' | 'openai' | 'google' | 'ollama'): Promise<void> {
+	private async performRealConnectionTest(provider: 'claude' | 'openai' | 'google' | 'ollama'): Promise<ConnectionTestResult> {
 		// Test the provider classes directly
 		const tempTimeoutManager = new TimeoutManager();
 		switch (provider) {
@@ -775,28 +783,74 @@ export class NovaSettingTab extends PluginSettingTab {
 				const claudeProvider = new ClaudeProvider(this.plugin.settings.aiProviders.claude, this.plugin.settings.general, tempTimeoutManager);
 				// For Claude, just test a minimal completion instead of getAvailableModels
 				await claudeProvider.complete('You are a helpful assistant.', 'Hi', { maxTokens: 1 });
-				break;
+				return {};
 			}
 			case 'openai': {
 				const openaiProvider = new OpenAIProvider(this.plugin.settings.aiProviders.openai, this.plugin.settings.general, tempTimeoutManager);
 				await openaiProvider.getAvailableModels();
-				break;
+				return {};
 			}
 			case 'google': {
 				const googleProvider = new GoogleProvider(this.plugin.settings.aiProviders.google, this.plugin.settings.general, tempTimeoutManager);
 				await googleProvider.getAvailableModels();
-				break;
+				return {};
 			}
 			case 'ollama': {
 				const ollamaProvider = new OllamaProvider(this.plugin.settings.aiProviders.ollama, this.plugin.settings.general, tempTimeoutManager);
-				// Ollama doesn't have getAvailableModels, check connection with isAvailable
-				const isAvailable = await ollamaProvider.isAvailable();
-				if (!isAvailable) {
-					throw new Error('Ollama connection failed');
-				}
-				break;
+				return { ollamaModelNames: await ollamaProvider.getAvailableModels() };
 			}
 		}
+	}
+
+	private updateOllamaModelCache(modelNames: string[]): string {
+		const ollamaSettings = this.plugin.settings.aiProviders.ollama;
+		const uniqueModels = Array.from(new Set(modelNames.map(model => model.trim()).filter(Boolean)));
+		const savedModel = ollamaSettings.model?.trim();
+
+		ollamaSettings.models = uniqueModels;
+		ollamaSettings.modelsLastRefreshed = new Date().toISOString();
+
+		const modelCount = uniqueModels.length;
+		const modelText = modelCount === 1 ? '1 local model found' : `${modelCount} local models found`;
+
+		if (modelCount === 0) {
+			return savedModel
+				? 'Connected. No local models found. Saved model kept in the picker.'
+				: 'Connected. No local models found.';
+		}
+
+		if (savedModel && !uniqueModels.includes(savedModel)) {
+			return `Connected. ${modelText}. Saved model not found.`;
+		}
+
+		return `Connected. ${modelText}.`;
+	}
+
+	private getOllamaModelListDescription(): string {
+		const ollamaSettings = this.plugin.settings.aiProviders.ollama;
+		const cachedModels = Array.isArray(ollamaSettings.models)
+			? Array.from(new Set(ollamaSettings.models.map(model => model.trim()).filter(Boolean)))
+			: [];
+		const savedModel = ollamaSettings.model?.trim();
+		const parts = [
+			'Nova refreshes the Ollama model list when you test the connection. If you add or remove models in Ollama, test again to update the model picker.'
+		];
+
+		if (cachedModels.length > 0) {
+			const modelText = cachedModels.length === 1 ? '1 cached local model' : `${cachedModels.length} cached local models`;
+			parts.push(`${modelText} available in the sidebar picker.`);
+		}
+
+		if (ollamaSettings.modelsLastRefreshed) {
+			const refreshedAt = new Date(ollamaSettings.modelsLastRefreshed);
+			parts.push(`Last refreshed: ${refreshedAt.toLocaleString()}.`);
+
+			if (savedModel && !cachedModels.includes(savedModel)) {
+				parts.push(`Saved model ${savedModel} is not in the refreshed Ollama list, but remains available until you choose another model.`);
+			}
+		}
+
+		return parts.join(' ');
 	}
 
 	private setConnectionStatus(container: HTMLElement, type: 'success' | 'error' | 'testing' | 'none', message: string): void {
@@ -805,7 +859,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		if (type === 'none') return;
 		
 		const statusEl = container.createDiv({ cls: `nova-status-indicator ${type}` });
-		statusEl.textContent = message;
+		statusEl.setText(message);
 	}
 
 	private updateConnectionStatus(container: HTMLElement, provider: 'claude' | 'openai' | 'google' | 'ollama'): void {
@@ -814,10 +868,17 @@ export class NovaSettingTab extends PluginSettingTab {
 		
 		if (!hasConfig) {
 			this.setConnectionStatus(container, 'none', '');
-		} else {
-			// Don't show anything initially - let user test when ready
-			this.setConnectionStatus(container, 'none', '');
+			return;
 		}
+
+		const status = this.getProviderStatus(provider);
+		if (status.state === 'connected') {
+			this.setConnectionStatus(container, 'success', 'Connected');
+			return;
+		}
+
+		// Don't show anything initially - let user test when ready
+		this.setConnectionStatus(container, 'none', '');
 	}
 
 	private hasProviderConfig(provider: 'claude' | 'openai' | 'google' | 'ollama'): boolean {
@@ -1576,18 +1637,8 @@ export class NovaSettingTab extends PluginSettingTab {
 		this.createTestConnectionButton(ollamaContainer, 'ollama');
 
 		new Setting(ollamaContainer)
-			.setName('Model')
-			.setDesc('Ollama model to use')
-			.addText(text => {
-				text.inputEl.addClass('nova-api-input-small');
-				return text
-					.setPlaceholder('Llama2')
-					.setValue(this.plugin.settings.aiProviders.ollama.model || '')
-					.onChange(async (value) => {
-						this.plugin.settings.aiProviders.ollama.model = value;
-						await this.plugin.saveSettings();
-					});
-			});
+			.setName('Local models')
+			.setDesc(this.getOllamaModelListDescription());
 
 		new Setting(ollamaContainer)
 			.setName('Default context limit')

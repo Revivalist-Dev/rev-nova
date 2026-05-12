@@ -425,11 +425,34 @@ export default class NovaPlugin extends Plugin {
 		});
 	}
 
+	private migrateOllamaModelCache(): void {
+		const ollamaSettings = this.settings.aiProviders?.ollama;
+		if (!ollamaSettings) {
+			return;
+		}
+
+		if (!Array.isArray(ollamaSettings.models)) {
+			ollamaSettings.models = [];
+		}
+
+		const savedModel = ollamaSettings.model?.trim();
+		if (savedModel && ollamaSettings.models.length === 0) {
+			ollamaSettings.models = [savedModel];
+		}
+	}
+
 	async loadSettings() {
 		const savedData = await this.loadData();
 		
 		// Use Object.assign for top level, but manually merge platformSettings to preserve saved values
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData);
+		this.settings.aiProviders = {
+			claude: Object.assign({}, DEFAULT_SETTINGS.aiProviders.claude, savedData?.aiProviders?.claude || {}),
+			openai: Object.assign({}, DEFAULT_SETTINGS.aiProviders.openai, savedData?.aiProviders?.openai || {}),
+			google: Object.assign({}, DEFAULT_SETTINGS.aiProviders.google, savedData?.aiProviders?.google || {}),
+			ollama: Object.assign({}, DEFAULT_SETTINGS.aiProviders.ollama, savedData?.aiProviders?.ollama || {})
+		};
+		this.migrateOllamaModelCache();
 		
 		// Manually merge general settings to ensure new fields get defaults
 		if (savedData?.general) {

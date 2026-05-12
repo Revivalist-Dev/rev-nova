@@ -16,7 +16,7 @@ export class IntentDetector {
         { pattern: /^(Now is|Today|This week|Lately|Currently|These days|Recently|Nowadays|At the moment)/i, name: 'temporal' },
         
         // Enhanced personal state sharing with more patterns
-        { pattern: /\b(I'm (feeling|thinking|working|trying|struggling|wondering|concerned|worried|excited|curious)|I've been|I was|I feel|I find myself|I tend to|I usually|I often)\b/i, name: 'personal_state' },
+        { pattern: /\b(I'm (feeling|thinking|working|trying|struggling|wondering|concerned|worried|excited|curious)|I've been|I was|I feel|I find myself|I tend to|I usually|I often|I wish(?: I)? (?:knew|understood|had|could))\b/i, name: 'personal_state' },
         
         // Enhanced reflective language
         { pattern: /\b(reminds me|makes me think|I wonder|I'm wondering|I'm curious|it occurs to me|I realize|I've noticed|I've observed|I've learned)\b/i, name: 'reflective' },

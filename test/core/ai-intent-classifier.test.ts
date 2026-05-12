@@ -140,7 +140,8 @@ describe('AIIntentClassifier', () => {
                 'Now is a busy time for me',
                 'I\'m feeling overwhelmed with work',
                 'This reminds me of something important',
-                'I wonder about this approach'
+                'I wonder about this approach',
+                'I wish I knew the difficulty rating of those hikes'
             ];
 
             for (const input of consultationInputs) {
@@ -292,7 +293,8 @@ describe('AIIntentClassifier', () => {
                 'It seems like a good approach',
                 'This reminds me of something',
                 'Lately I have been wondering',
-                'In my experience, this works'
+                'In my experience, this works',
+                'I wish I knew the difficulty rating of those hikes'
             ];
 
             for (const statement of conversational) {

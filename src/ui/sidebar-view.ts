@@ -2148,25 +2148,16 @@ USER REQUEST: ${processedMessage}`;
 			const models = this.getAvailableModels(providerType);
 			const providerDisplayName = this.getProviderDisplayName(providerType);
 			
-			// Skip providers with no models (except Ollama)
-			if (models.length === 0 && providerType !== 'ollama') continue;
+			if (models.length === 0) continue;
 			
 			// Create optgroup for this provider
 			const group = this.providerDropdown.selectEl.createEl('optgroup');
 			group.label = providerDisplayName;
 			
-			if (models.length === 0) {
-				// Provider without specific models (like Ollama)
+			for (const model of models) {
 				const option = group.createEl('option');
-				option.value = `${providerType}-${providerConfig?.model || providerDisplayName}`;
-				option.textContent = providerConfig?.model || providerDisplayName;
-			} else {
-				// Provider with specific models
-				for (const model of models) {
-					const option = group.createEl('option');
-					option.value = `${providerType}-${model.value}`;
-					option.textContent = model.label;
-				}
+				option.value = `${providerType}-${model.value}`;
+				option.textContent = model.label;
 			}
 		}
 		
@@ -2194,6 +2185,9 @@ USER REQUEST: ${processedMessage}`;
 
 			// Update the model in settings
 			this.plugin.settingTab.setCurrentModel(model);
+			if (provider === 'claude' || provider === 'openai' || provider === 'google' || provider === 'ollama') {
+				this.plugin.settings.aiProviders[provider].model = model;
+			}
 			await this.plugin.saveSettings();
 			
 			// Refresh privacy indicator and context

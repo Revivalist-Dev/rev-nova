@@ -515,6 +515,20 @@ Final thoughts and summary.`,
             expect(validation.issues).toHaveLength(0);
         });
 
+        it('should accept long prompts for provider-level context handling', () => {
+            const validPrompt: GeneratedPrompt = {
+                systemPrompt: 'Valid system prompt',
+                userPrompt: 'x'.repeat(15000),
+                context: 'Valid context',
+                config: { temperature: 0.7, maxTokens: 1000 }
+            };
+
+            const validation = builder.validatePrompt(validPrompt);
+
+            expect(validation.valid).toBe(true);
+            expect(validation.issues).toHaveLength(0);
+        });
+
         it('should detect multiple issues', () => {
             const invalidPrompt: GeneratedPrompt = {
                 systemPrompt: '',
