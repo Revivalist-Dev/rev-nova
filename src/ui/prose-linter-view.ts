@@ -10,6 +10,7 @@ import { createAnalysisRunToken } from '../core/writing-analysis-runner';
 import { buildProseIssues } from '../features/prose-linter/prose-linter-issues';
 import { createProseIssuePage, PROSE_LINTER_INITIAL_VISIBLE_COUNT } from '../features/prose-linter/prose-linter-rendering';
 import { runBudgetedProseLinter, type ProseLinterRunnerState } from '../features/prose-linter/prose-linter-runner';
+import type { ProseIgnoredIssueRecord } from '../features/prose-linter/prose-linter-store';
 import {
 	GENERAL_PROSE_CONFIG,
 	PROSE_ISSUE_LABELS,
@@ -90,6 +91,7 @@ export class ProseLinterView extends ItemView {
 	private rootEl: HTMLElement | null = null;
 	private summaryEl: HTMLElement | null = null;
 	private categoriesEl: HTMLElement | null = null;
+	private ignoredEl: HTMLElement | null = null;
 	private listEl: HTMLElement | null = null;
 	private emptyEl: HTMLElement | null = null;
 	private statusEl: HTMLElement | null = null;
@@ -175,7 +177,6 @@ export class ProseLinterView extends ItemView {
 		const content = await this.getCurrentContent(file);
 		const contentHash = hashContent(content);
 		if (contentHash !== this.lastContentHash) {
-			this.ignoredIssueIds.clear();
 			this.visibleCount = PROSE_LINTER_INITIAL_VISIBLE_COUNT;
 			this.lastContentHash = contentHash;
 		}
@@ -213,9 +214,9 @@ export class ProseLinterView extends ItemView {
 					const active = this.plugin.writingAnalysisManager?.getActiveRunToken();
 					return Boolean(active && active.sequence > token.sequence && active.filePath !== token.filePath);
 				}
-			});
+		});
 		const ignoredIssueTypes = this.plugin.proseLinterStore.getIgnoredIssueTypes(file.path);
-		const issues = disabledByFrontmatter
+		const candidateIssues = disabledByFrontmatter
 			? []
 			: buildProseIssues({
 				analysis,
@@ -225,6 +226,8 @@ export class ProseLinterView extends ItemView {
 				ignoredIssueIds: this.ignoredIssueIds,
 				ignoredIssueTypes
 			});
+		const ignoredIssueKeys = this.plugin.proseLinterStore.getIgnoredIssueKeys(file.path, candidateIssues);
+		const issues = candidateIssues.filter((issue) => !ignoredIssueKeys.has(issue.ignoreKey));
 
 		this.state = {
 			file,
@@ -255,6 +258,7 @@ export class ProseLinterView extends ItemView {
 		this.summaryEl = container.createDiv({ cls: 'nova-prose-linter-summary' });
 		this.categoriesEl = container.createDiv({ cls: 'nova-prose-linter-categories' });
 		this.statusEl = container.createDiv({ cls: 'nova-prose-linter-status' });
+		this.ignoredEl = container.createDiv({ cls: 'nova-prose-linter-ignored' });
 		this.listEl = container.createDiv({ cls: 'nova-prose-linter-list' });
 		this.emptyEl = container.createDiv({ cls: 'nova-prose-linter-empty' });
 	}
@@ -263,6 +267,7 @@ export class ProseLinterView extends ItemView {
 		this.renderSummary();
 		this.renderCategories();
 		this.renderStatus();
+		this.renderIgnoredItems();
 		this.renderIssues();
 		this.syncEditorHighlights();
 	}
@@ -414,8 +419,7 @@ export class ProseLinterView extends ItemView {
 		const actionsEl = rowEl.createDiv({ cls: 'nova-prose-linter-row-actions' });
 		this.createRowButton(actionsEl, 'Jump', () => this.jumpToIssue(issue), true);
 		this.createRowButton(actionsEl, 'Ignore', () => {
-			this.ignoredIssueIds.add(issue.id);
-			this.render();
+			void this.ignoreIssue(issue);
 		});
 
 		if (issue.replacement && this.canApplyReplacement(issue)) {
@@ -423,18 +427,62 @@ export class ProseLinterView extends ItemView {
 		}
 	}
 
-	private createRowButton(container: HTMLElement, text: string, onClick: () => void, primary = false): void {
+	private renderIgnoredItems(): void {
+		if (!this.ignoredEl) {
+			return;
+		}
+		this.ignoredEl.empty();
+		this.ignoredEl.addClass('nova-prose-linter-ignored--empty');
+
+		if (!this.state.file || this.state.oversized || this.state.disabledByFrontmatter) {
+			return;
+		}
+
+		const ignoredIssues = this.plugin.proseLinterStore.getIgnoredIssues(this.state.file.path);
+		if (ignoredIssues.length === 0) {
+			return;
+		}
+		this.ignoredEl.removeClass('nova-prose-linter-ignored--empty');
+
+		const headerEl = this.ignoredEl.createDiv({ cls: 'nova-prose-linter-ignored-header' });
+		headerEl.createSpan({
+			cls: 'nova-prose-linter-ignored-title',
+			text: `${ignoredIssues.length.toLocaleString()} ignored ${ignoredIssues.length === 1 ? 'item' : 'items'}`
+		});
+		headerEl.createSpan({
+			cls: 'nova-prose-linter-ignored-subtitle',
+			text: 'Restore items when you want them back in this note.'
+		});
+
+		const listEl = this.ignoredEl.createDiv({ cls: 'nova-prose-linter-ignored-list' });
+		ignoredIssues.forEach((ignoredIssue) => {
+			this.renderIgnoredIssueRow(listEl, ignoredIssue);
+		});
+	}
+
+	private renderIgnoredIssueRow(container: HTMLElement, ignoredIssue: ProseIgnoredIssueRecord): void {
+		const rowEl = container.createDiv({ cls: 'nova-prose-linter-ignored-row' });
+		rowEl.createDiv({
+			cls: 'nova-prose-linter-ignored-label',
+			text: `${ignoredIssue.label} · line ${ignoredIssue.line + 1}`
+		});
+		this.createRowButton(rowEl, 'Restore', () => {
+			void this.restoreIssue(ignoredIssue.key);
+		});
+	}
+
+	private createRowButton(container: HTMLElement, text: string, onClick: () => void | Promise<void>, primary = false): void {
 		const button = container.createEl('button', {
 			cls: primary ? 'nova-prose-linter-row-button nova-prose-linter-row-button--primary' : 'nova-prose-linter-row-button',
 			text
 		});
 		button.setAttribute('type', 'button');
 		this.registerButtonActivation(button, () => {
-			onClick();
+			void onClick();
 		});
 	}
 
-	private registerButtonActivation(button: HTMLElement, onActivate: () => void): void {
+	private registerButtonActivation(button: HTMLElement, onActivate: () => void | Promise<void>): void {
 		let handledPointerActivation = false;
 		const activateFromPointer = (event: MouseEvent | PointerEvent): void => {
 			if (event.button !== 0) {
@@ -443,7 +491,7 @@ export class ProseLinterView extends ItemView {
 			handledPointerActivation = true;
 			event.preventDefault();
 			event.stopPropagation();
-			onActivate();
+			void onActivate();
 		};
 
 		this.registerDomEvent(button, 'pointerdown', activateFromPointer);
@@ -462,7 +510,7 @@ export class ProseLinterView extends ItemView {
 				handledPointerActivation = false;
 				return;
 			}
-			onActivate();
+			void onActivate();
 		});
 	}
 
@@ -472,8 +520,27 @@ export class ProseLinterView extends ItemView {
 			visibleCount,
 			hiddenIssueTypes: includeHidden ? this.hiddenIssueTypes : new Set<ProseIssueType>(),
 			ignoredIssueIds: this.ignoredIssueIds,
+			ignoredIssueKeys: this.plugin.proseLinterStore.getIgnoredIssueKeys(this.state.file?.path ?? null),
 			ignoredIssueTypes: this.plugin.proseLinterStore.getIgnoredIssueTypes(this.state.file?.path ?? null)
 		});
+	}
+
+	private async ignoreIssue(issue: ProseIssue): Promise<void> {
+		if (!this.state.file) {
+			this.ignoredIssueIds.add(issue.id);
+			this.render();
+			return;
+		}
+		await this.plugin.proseLinterStore.ignoreIssue(this.state.file.path, issue);
+		await this.refresh(true);
+	}
+
+	private async restoreIssue(ignoreKey: string): Promise<void> {
+		if (!this.state.file) {
+			return;
+		}
+		await this.plugin.proseLinterStore.restoreIssue(this.state.file.path, ignoreKey);
+		await this.refresh(true);
 	}
 
 	private toggleCategoryGroup(group: ProseLinterCategoryGroup): void {

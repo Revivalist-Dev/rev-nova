@@ -18,6 +18,7 @@ describe('buildProseIssues', () => {
 		const deepIssue: ProseIssue = {
 			id: 'deep',
 			type: 'complex-word',
+			ignoreKey: 'complex-word:0:test',
 			severity: 'suggestion',
 			line: 0,
 			startCh: 0,
@@ -55,22 +56,25 @@ describe('buildProseIssues', () => {
 			source: 'very',
 			replacement: ''
 		});
+		expect(issues.find((issue) => issue.type === 'weak-intensifier')?.suggestion).toBe('Remove it if the sentence still works, or choose a more exact word nearby.');
 	});
 
-	test('filters ignored issue IDs and note-specific ignored issue types', () => {
+	test('filters ignored issue IDs, persistent issue keys, and note-specific ignored issue types', () => {
 		const content = 'The plan was approved carefully. This is very direct.';
 		const analysis = analyzeWriting(content);
 		const allIssues = buildProseIssues({ analysis, content, filePath: 'note.md' });
 		const passiveId = allIssues.find((issue) => issue.type === 'passive-voice')?.id;
+		const adverbKey = allIssues.find((issue) => issue.type === 'adverb')?.ignoreKey;
 
 		const filtered = buildProseIssues({
 			analysis,
 			content,
 			filePath: 'note.md',
 			ignoredIssueIds: new Set(passiveId ? [passiveId] : []),
+			ignoredIssueKeys: new Set(adverbKey ? [adverbKey] : []),
 			ignoredIssueTypes: new Set(['weak-intensifier'])
 		});
 
-		expect(filtered.map((issue) => issue.type)).toEqual(['adverb']);
+		expect(filtered).toEqual([]);
 	});
 });

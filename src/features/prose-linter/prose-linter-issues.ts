@@ -6,9 +6,11 @@ import type { WritingAnalysis } from '../../core/writing-analysis';
 import {
 	GENERAL_PROSE_CONFIG,
 	PROSE_ISSUE_PRIORITY,
+	createProseIssueIgnoreKey,
 	createProseIssueId,
 	isProseIssueTypeEnabled,
 	type ProseIssue,
+	type ProseIssueRange,
 	type ProseIssueSeverity,
 	type ProseIssueType,
 	type ProseLinterConfig
@@ -21,12 +23,14 @@ export interface BuildProseIssuesInput {
 	config?: ProseLinterConfig;
 	deepIssues?: ProseIssue[];
 	ignoredIssueIds?: ReadonlySet<string>;
+	ignoredIssueKeys?: ReadonlySet<string>;
 	ignoredIssueTypes?: ReadonlySet<ProseIssueType>;
 }
 
 export function buildProseIssues(input: BuildProseIssuesInput): ProseIssue[] {
 	const config = input.config ?? GENERAL_PROSE_CONFIG;
 	const ignoredIssueIds = input.ignoredIssueIds ?? new Set<string>();
+	const ignoredIssueKeys = input.ignoredIssueKeys ?? new Set<string>();
 	const ignoredIssueTypes = input.ignoredIssueTypes ?? new Set<ProseIssueType>();
 	const lines = input.content.split('\n');
 	const issues: ProseIssue[] = [];
@@ -106,8 +110,8 @@ export function buildProseIssues(input: BuildProseIssuesInput): ProseIssue[] {
 			endCh: match.endCh,
 			sourceText,
 			excerpt: extractExcerpt(lines, match.line),
-			explanation: 'This intensifier often weakens the sentence.',
-			suggestion: 'Remove it or replace the surrounding phrase with a more exact word.',
+			explanation: 'This weakener adds emphasis without making the sentence more precise.',
+			suggestion: 'Remove it if the sentence still works, or choose a more exact word nearby.',
 			replacement: { source: sourceText, replacement: '' }
 		}));
 	}
@@ -116,7 +120,7 @@ export function buildProseIssues(input: BuildProseIssuesInput): ProseIssue[] {
 
 	const unique = new Map<string, ProseIssue>();
 	for (const issue of issues) {
-		if (ignoredIssueIds.has(issue.id) || ignoredIssueTypes.has(issue.type)) {
+		if (ignoredIssueIds.has(issue.id) || ignoredIssueKeys.has(issue.ignoreKey) || ignoredIssueTypes.has(issue.type)) {
 			continue;
 		}
 		unique.set(issue.id, issue);
@@ -148,11 +152,13 @@ interface CreateIssueInput {
 	explanation: string;
 	suggestion: string;
 	replacement?: ProseIssue['replacement'];
+	relatedRanges?: ProseIssueRange[];
 }
 
 function createIssue(input: CreateIssueInput): ProseIssue {
 	return {
 		id: createProseIssueId(input.filePath, input.type, input.line, input.startCh, input.endCh, input.sourceText),
+		ignoreKey: createProseIssueIgnoreKey(input.type, input.line, input.sourceText),
 		type: input.type,
 		severity: input.severity,
 		line: input.line,
@@ -162,7 +168,8 @@ function createIssue(input: CreateIssueInput): ProseIssue {
 		sourceText: input.sourceText,
 		explanation: input.explanation,
 		suggestion: input.suggestion,
-		replacement: input.replacement
+		replacement: input.replacement,
+		relatedRanges: input.relatedRanges
 	};
 }
 

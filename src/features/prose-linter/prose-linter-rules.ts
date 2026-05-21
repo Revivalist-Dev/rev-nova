@@ -6,8 +6,10 @@ import { indexToPosition, normalizeMarkdownForWritingAnalysis } from '../../core
 import { measureElapsedMs } from '../../core/writing-analysis-runner';
 import {
 	createProseIssueId,
+	createProseIssueIgnoreKey,
 	isProseIssueTypeEnabled,
 	type ProseIssue,
+	type ProseIssueRange,
 	type ProseIssueSeverity,
 	type ProseIssueType,
 	type ProseLinterConfig
@@ -211,18 +213,22 @@ function findRepeatedWordIssues(context: ProseRuleContext, words: WordToken[], l
 			continue;
 		}
 		const sourceText = extractSource(lines, previous.line, previous.startCh, current.endCh);
-		issues.push(createIssue({
-			context,
-			type: 'repeated-word',
-			severity: 'warning',
+			issues.push(createIssue({
+				context,
+				type: 'repeated-word',
+				severity: 'warning',
 			line: previous.line,
 			startCh: previous.startCh,
 			endCh: current.endCh,
-			sourceText,
-			explanation: 'This looks like an accidental repeated word.',
-			suggestion: 'Remove one copy.',
-			replacement: { source: sourceText, replacement: previous.word }
-		}));
+				sourceText,
+				explanation: 'This looks like an accidental repeated word.',
+				suggestion: 'Remove one copy.',
+				replacement: { source: sourceText, replacement: previous.word },
+				relatedRanges: [
+					tokenToRange(previous),
+					tokenToRange(current)
+				]
+			}));
 	}
 	return issues;
 }
@@ -239,19 +245,20 @@ function findRepeatedPhraseIssues(context: ProseRuleContext, words: WordToken[],
 			continue;
 		}
 		const sourceText = extractSource(lines, firstToken.line, firstToken.startCh, lastToken.endCh);
-		issues.push(createIssue({
-			context,
-			type: 'repeated-phrase',
+			issues.push(createIssue({
+				context,
+				type: 'repeated-phrase',
 			severity: 'warning',
 			line: firstToken.line,
 			startCh: firstToken.startCh,
 			endCh: lastToken.endCh,
-			sourceText,
-			explanation: `This phrase appears ${candidate.count} times nearby.`,
-			suggestion: 'Keep the stronger use and rewrite or remove the echo.'
-		}));
-		occupiedRanges.push(range);
-	}
+				sourceText,
+				explanation: `This phrase appears ${candidate.count} times nearby.`,
+				suggestion: 'Keep the stronger use and rewrite or remove the echo.',
+				relatedRanges: candidate.occurrences.map(occurrenceToRange)
+			}));
+			occupiedRanges.push(range);
+		}
 	return issues;
 }
 
@@ -261,6 +268,7 @@ interface RepeatedPhraseOccurrence {
 
 interface RepeatedPhraseCandidate {
 	repeated: RepeatedPhraseOccurrence;
+	occurrences: RepeatedPhraseOccurrence[];
 	count: number;
 	wordCount: number;
 }
@@ -291,13 +299,14 @@ function collectRepeatedPhraseCandidates(words: WordToken[]): RepeatedPhraseCand
 			});
 			if (nearbyOccurrences.length < 2) {
 				continue;
+				}
+				candidates.push({
+					repeated: nearbyOccurrences[1],
+					occurrences: nearbyOccurrences,
+					count: nearbyOccurrences.length,
+					wordCount
+				});
 			}
-			candidates.push({
-				repeated: nearbyOccurrences[1],
-				count: nearbyOccurrences.length,
-				wordCount
-			});
-		}
 	}
 
 	return candidates.sort((left, right) => {
@@ -342,11 +351,13 @@ interface CreateRuleIssueInput {
 	explanation: string;
 	suggestion: string;
 	replacement?: ProseIssue['replacement'];
+	relatedRanges?: ProseIssueRange[];
 }
 
 function createIssue(input: CreateRuleIssueInput): ProseIssue {
 	return {
 		id: createProseIssueId(input.context.filePath, input.type, input.line, input.startCh, input.endCh, input.sourceText),
+		ignoreKey: createProseIssueIgnoreKey(input.type, input.line, input.sourceText),
 		type: input.type,
 		severity: input.severity,
 		line: input.line,
@@ -356,7 +367,26 @@ function createIssue(input: CreateRuleIssueInput): ProseIssue {
 		sourceText: input.sourceText,
 		explanation: input.explanation,
 		suggestion: input.suggestion,
-		replacement: input.replacement
+		replacement: input.replacement,
+		relatedRanges: input.relatedRanges
+	};
+}
+
+function tokenToRange(token: WordToken): ProseIssueRange {
+	return {
+		line: token.line,
+		startCh: token.startCh,
+		endCh: token.endCh
+	};
+}
+
+function occurrenceToRange(occurrence: RepeatedPhraseOccurrence): ProseIssueRange {
+	const firstToken = occurrence.tokens[0];
+	const lastToken = occurrence.tokens[occurrence.tokens.length - 1];
+	return {
+		line: firstToken.line,
+		startCh: firstToken.startCh,
+		endCh: lastToken.endCh
 	};
 }
 

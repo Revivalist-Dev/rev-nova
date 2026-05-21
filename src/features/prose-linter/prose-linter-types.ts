@@ -25,8 +25,15 @@ export interface ProseReplacement {
 	replacement: string;
 }
 
+export interface ProseIssueRange {
+	line: number;
+	startCh: number;
+	endCh: number;
+}
+
 export interface ProseIssue {
 	id: string;
+	ignoreKey: string;
 	type: ProseIssueType;
 	severity: ProseIssueSeverity;
 	line: number;
@@ -37,6 +44,7 @@ export interface ProseIssue {
 	explanation: string;
 	suggestion: string;
 	replacement?: ProseReplacement;
+	relatedRanges?: ProseIssueRange[];
 }
 
 export interface ProseLinterConfig {
@@ -120,4 +128,23 @@ export function createProseIssueId(
 		endCh,
 		hashContent(sourceText)
 	].join(':');
+}
+
+export function createProseIssueIgnoreKey(
+	type: ProseIssueType,
+	line: number,
+	sourceText: string
+): string {
+	return [
+		type,
+		line,
+		hashContent(normalizeIssueSource(sourceText))
+	].join(':');
+}
+
+export function normalizeIssueSource(sourceText: string): string {
+	return sourceText
+		.toLowerCase()
+		.replace(/\s+/g, ' ')
+		.trim();
 }

@@ -57,6 +57,25 @@ describe('WritingAnalysisManager', () => {
 		return highlightManager;
 	}
 
+	function createFakeEditorViewDoc(content: string) {
+		const lines = content.split('\n');
+		return {
+			state: {
+				doc: {
+					lines: lines.length,
+					line: (lineNumber: number) => {
+						const zeroBased = lineNumber - 1;
+						const from = lines.slice(0, zeroBased).reduce((offset, line) => offset + line.length + 1, 0);
+						return {
+							from,
+							to: from + (lines[zeroBased]?.length ?? 0)
+						};
+					}
+				}
+			}
+		};
+	}
+
 	test('clears writing analysis when the active leaf becomes the writing dashboard', async () => {
 		const { manager } = createManager('nova-writing-dashboard');
 		const trackedView = createTrackedMarkdownView();
@@ -415,6 +434,40 @@ describe('WritingAnalysisManager', () => {
 
 		expect((manager as any).proseLinterReviewActive).toBe(true);
 		expect(highlightManager.clearHighlights).not.toHaveBeenCalled();
+	});
+
+	test('expands repeated issue related ranges into editor highlights', () => {
+		const { manager } = createManager(VIEW_TYPE_PROSE_LINTER);
+		const content = 'Clear launch story matters.\nClear launch story spreads.';
+		const view = createTrackedMarkdownView();
+		view.editor = new Editor(content);
+		(view.editor as unknown as { cm: unknown }).cm = createFakeEditorViewDoc(content);
+		(manager as any).activeView = view;
+		(manager as any).proseLinterReviewActive = true;
+		const highlightManager = attachHighlightSpy(manager);
+
+		manager.setProseLinterIssues('notes/current.md', hashContent(content), [{
+			id: 'issue-1',
+			ignoreKey: 'repeated-phrase:1:test',
+			type: 'repeated-phrase',
+			severity: 'warning',
+			line: 1,
+			startCh: 0,
+			endCh: 18,
+			excerpt: 'Clear launch story spreads.',
+			sourceText: 'Clear launch story',
+			explanation: 'This phrase appears 2 times nearby.',
+			suggestion: 'Keep the stronger use and rewrite or remove the echo.',
+			relatedRanges: [
+				{ line: 0, startCh: 0, endCh: 18 },
+				{ line: 1, startCh: 0, endCh: 18 }
+			]
+		}]);
+
+		expect(highlightManager.updateHighlights).toHaveBeenCalledWith([
+			expect.objectContaining({ from: 0, to: 18, type: 'repeated-phrase' }),
+			expect.objectContaining({ from: 28, to: 46, type: 'repeated-phrase' })
+		]);
 	});
 
 	describe('size gate', () => {

@@ -12,6 +12,7 @@ export interface ProseIssuePageInput {
 	visibleCount?: number;
 	hiddenIssueTypes?: ReadonlySet<ProseIssueType>;
 	ignoredIssueIds?: ReadonlySet<string>;
+	ignoredIssueKeys?: ReadonlySet<string>;
 	ignoredIssueTypes?: ReadonlySet<ProseIssueType>;
 }
 
@@ -26,11 +27,13 @@ export interface ProseIssuePage {
 export function createProseIssuePage(input: ProseIssuePageInput): ProseIssuePage {
 	const hiddenIssueTypes = input.hiddenIssueTypes ?? new Set<ProseIssueType>();
 	const ignoredIssueIds = input.ignoredIssueIds ?? new Set<string>();
+	const ignoredIssueKeys = input.ignoredIssueKeys ?? new Set<string>();
 	const ignoredIssueTypes = input.ignoredIssueTypes ?? new Set<ProseIssueType>();
 	const visibleCount = input.visibleCount ?? PROSE_LINTER_INITIAL_VISIBLE_COUNT;
 	const visibleIssues = input.issues.filter((issue) => {
 		return !hiddenIssueTypes.has(issue.type) &&
 			!ignoredIssueIds.has(issue.id) &&
+			!ignoredIssueKeys.has(issue.ignoreKey) &&
 			!ignoredIssueTypes.has(issue.type);
 	});
 	const pageIssues = visibleIssues.slice(0, visibleCount);

@@ -4313,11 +4313,12 @@
     gap: var(--size-2-1);
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 20;
     flex-shrink: 0;
-    padding: var(--size-4-2);
+    padding: var(--size-4-2) var(--nova-panel-padding-x);
     border-bottom: 1px solid var(--background-modifier-border);
     background: var(--background-primary);
+    box-shadow: 0 -24px 0 24px var(--background-primary);
 }
 
 .nova-prose-linter-brand {
@@ -4350,6 +4351,7 @@
 .nova-prose-linter-status,
 .nova-prose-linter-empty,
 .nova-prose-linter-list,
+.nova-prose-linter-ignored,
 .nova-prose-linter-controls,
 .nova-prose-linter-filters,
 .nova-prose-linter-categories {
@@ -4361,6 +4363,7 @@
 .nova-prose-linter-filters,
 .nova-prose-linter-categories,
 .nova-prose-linter-list,
+.nova-prose-linter-ignored,
 .nova-prose-linter-status,
 .nova-prose-linter-empty {
     margin-top: var(--size-4-2);
@@ -4465,6 +4468,51 @@ button.nova-prose-linter-category:hover {
 .nova-prose-linter-list {
     display: flex;
     flex-direction: column;
+    gap: var(--size-2-2);
+}
+
+.nova-prose-linter-ignored {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    padding: var(--size-4-2);
+}
+
+.nova-prose-linter-ignored--empty {
+    display: none;
+}
+
+.nova-prose-linter-ignored-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nova-prose-linter-ignored-title {
+    color: var(--text-normal);
+    font-size: var(--font-smallest);
+    font-weight: var(--font-medium);
+    line-height: 1.3;
+}
+
+.nova-prose-linter-ignored-subtitle,
+.nova-prose-linter-ignored-label {
+    color: var(--text-muted);
+    font-size: var(--font-smallest);
+    line-height: 1.35;
+}
+
+.nova-prose-linter-ignored-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-2);
+    padding-top: var(--size-4-1);
+}
+
+.nova-prose-linter-ignored-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: var(--size-2-2);
 }
 

@@ -119,6 +119,17 @@ describe('ProseLinterView', () => {
 		);
 	});
 
+	test('collapses the ignored-items section when there are no ignored items', async () => {
+		const content = 'Maybe we should utilize screenshots.';
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+
+		const ignoredSection = view.containerEl.querySelector('.nova-prose-linter-ignored') as HTMLElement;
+
+		expect(ignoredSection).toBeTruthy();
+		expect(ignoredSection.classList.contains('nova-prose-linter-ignored--empty')).toBe(true);
+	});
+
 	test('jump selects the current issue range', async () => {
 		const content = 'Maybe we should use plain words.';
 		const { plugin, editor } = createPlugin(content);
@@ -374,7 +385,7 @@ describe('ProseLinterView', () => {
 		expect(view.containerEl.querySelectorAll('.nova-prose-linter-row').length).toBeGreaterThan(50);
 	});
 
-	test('ignores one issue locally without persisting note content', async () => {
+	test('persists one ignored issue without persisting note content', async () => {
 		const content = 'Maybe we should utilize screenshots.';
 		let saved: unknown = null;
 		const { plugin } = createPlugin(content);
@@ -390,15 +401,38 @@ describe('ProseLinterView', () => {
 		const ignoreButton = Array.from(view.containerEl.querySelectorAll('button'))
 			.find((button) => button.textContent === 'Ignore') as HTMLButtonElement;
 		ignoreButton.click();
-		await Promise.resolve();
+		await flushPromises();
 
-		expect(saved).toBeNull();
+		expect(saved).toEqual(expect.objectContaining({ version: 2 }));
+		expect(JSON.stringify(saved)).toContain('ignoredIssues');
 		expect(view.containerEl.textContent).not.toContain('"utilize" is more complex than this sentence needs.');
+		expect(view.containerEl.textContent).toContain('ignored item');
 		expect(JSON.stringify(saved)).not.toContain('Maybe');
 		expect(JSON.stringify(saved)).not.toContain('utilize');
 	});
 
-	test('Ignore activates on the first pointer press without persisting note content', async () => {
+	test('restores a persistent ignored issue for the current note', async () => {
+		const content = 'Maybe we should utilize screenshots.';
+		const { plugin } = createPlugin(content);
+		const view = await openView(plugin);
+
+		const ignoreButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Ignore') as HTMLButtonElement;
+		ignoreButton.click();
+		await flushPromises();
+
+		expect(view.containerEl.textContent).toContain('ignored item');
+
+		const restoreButton = Array.from(view.containerEl.querySelectorAll('button'))
+			.find((button) => button.textContent === 'Restore') as HTMLButtonElement;
+		restoreButton.click();
+		await flushPromises();
+
+		expect(view.containerEl.textContent).not.toContain('ignored item');
+		expect(view.containerEl.textContent).toContain('"utilize" is more complex than this sentence needs.');
+	});
+
+	test('Ignore activates on the first pointer press while persisting no note content', async () => {
 		const content = 'Maybe we should utilize screenshots.';
 		let saved: unknown = null;
 		const { plugin } = createPlugin(content);
@@ -415,10 +449,12 @@ describe('ProseLinterView', () => {
 			.find((button) => button.textContent === 'Ignore') as HTMLButtonElement;
 		ignoreButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
 		ignoreButton.click();
-		await Promise.resolve();
+		await flushPromises();
 
-		expect(saved).toBeNull();
+		expect(saved).toEqual(expect.objectContaining({ version: 2 }));
 		expect(view.containerEl.textContent).not.toContain('"utilize" is more complex than this sentence needs.');
+		expect(JSON.stringify(saved)).not.toContain('Maybe');
+		expect(JSON.stringify(saved)).not.toContain('utilize');
 	});
 
 	test('Analyze note activates on the first pointer press for large notes', async () => {
@@ -508,4 +544,12 @@ function installDomHelpers(): void {
 	proto.removeClass = function removeClass(cls: string) {
 		this.classList.remove(cls);
 	};
+}
+
+async function flushPromises(): Promise<void> {
+	await Promise.resolve();
+	await Promise.resolve();
+	await Promise.resolve();
+	await Promise.resolve();
+	await Promise.resolve();
 }

@@ -7,7 +7,7 @@ import { EditorView } from '@codemirror/view';
 import { analyzeWriting, hashContent, hasWritingAnalysisOptOut, MAX_WRITING_ANALYSIS_CHAR_LENGTH, type WritingAnalysis } from '../core/writing-analysis';
 import { createAnalysisRunToken, isStaleAnalysisRun, type AnalysisRunToken } from '../core/writing-analysis-runner';
 import { CodeMirrorWritingHighlightManager, type WritingHighlight } from '../features/commands/ui/codemirror-decorations';
-import { PROSE_ISSUE_LABELS, type ProseIssue } from '../features/prose-linter/prose-linter-types';
+import { PROSE_ISSUE_LABELS, type ProseIssue, type ProseIssueRange } from '../features/prose-linter/prose-linter-types';
 import { VIEW_TYPE_NOVA_SIDEBAR, VIEW_TYPE_PROSE_LINTER } from '../constants';
 import { VIEW_TYPE_WRITING_DASHBOARD } from './writing-dashboard-view';
 import { Logger } from '../utils/logger';
@@ -197,13 +197,7 @@ export class WritingAnalysisManager {
         }
 
         this.proseLinterHighlights = issues
-            .map(issue => this.createHighlight(
-                issue.line,
-                issue.startCh,
-                issue.endCh,
-                issue.type,
-                `${PROSE_ISSUE_LABELS[issue.type]}: ${issue.suggestion}`
-            ))
+            .flatMap(issue => this.createHighlightsForIssue(issue))
             .filter((highlight): highlight is WritingHighlight => Boolean(highlight));
         this.proseLinterHighlightFilePath = filePath;
         this.proseLinterHighlightContentHash = contentHash;
@@ -431,6 +425,29 @@ export class WritingAnalysisManager {
         }
 
         return { from, to, type, title };
+    }
+
+    private createHighlightsForIssue(issue: ProseIssue): Array<WritingHighlight | null> {
+        const title = `${PROSE_ISSUE_LABELS[issue.type]}: ${issue.suggestion}`;
+        const ranges = this.getHighlightRanges(issue);
+        return ranges.map(range => this.createHighlight(
+            range.line,
+            range.startCh,
+            range.endCh,
+            issue.type,
+            title
+        ));
+    }
+
+    private getHighlightRanges(issue: ProseIssue): ProseIssueRange[] {
+        if (issue.relatedRanges && issue.relatedRanges.length > 0) {
+            return issue.relatedRanges;
+        }
+        return [{
+            line: issue.line,
+            startCh: issue.startCh,
+            endCh: issue.endCh
+        }];
     }
 
     private clearHighlights(): void {

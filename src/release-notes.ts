@@ -14,6 +14,19 @@ export interface ReleaseNotesEntry {
 
 export const RELEASE_NOTES: Record<string, string> = {
 	// Add entries before running `npm version`. The /release command handles this.
+	'1.6.2': [
+		'## What\'s New in Nova 1.6.2',
+		'',
+		'### Prose Linter Polish',
+		'',
+		'- **Ignored issues now persist per note.** Use Ignore to hide a specific issue in the current note, then restore it later from the ignored-items section when you want it back.',
+		'- **Repeated phrase review is clearer.** Jump and editor highlights now account for related nearby phrase occurrences, making echoes easier to spot and revise.',
+		'- **Weakener guidance is more practical.** Nova now focuses the suggestion on removing the weakener or choosing more exact wording instead of implying an AI rewrite.',
+		'',
+		'### Thanks',
+		'',
+		'Thanks to Helmut for the thoughtful suggestions!',
+	].join('\n'),
 	'1.6.1': [
 		'## What\'s New in Nova 1.6.1',
 		'',

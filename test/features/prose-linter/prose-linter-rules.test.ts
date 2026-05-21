@@ -32,7 +32,17 @@ describe('runProseLinterRules', () => {
 		]);
 		expect(result.issues.find((issue) => issue.type === 'repeated-phrase')).toMatchObject({
 			sourceText: 'clear launch story',
-			explanation: 'This phrase appears 2 times nearby.'
+			explanation: 'This phrase appears 2 times nearby.',
+			relatedRanges: [
+				{ line: 2, startCh: 0, endCh: 18 },
+				{ line: 2, startCh: 35, endCh: 53 }
+			]
+		});
+		expect(result.issues.find((issue) => issue.type === 'repeated-word')).toMatchObject({
+			relatedRanges: [
+				{ line: 1, startCh: 4, endCh: 9 },
+				{ line: 1, startCh: 10, endCh: 15 }
+			]
 		});
 		expect(result.issues.find((issue) => issue.type === 'complex-word')?.replacement).toEqual({
 			source: 'utilize',
