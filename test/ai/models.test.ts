@@ -49,6 +49,18 @@ function createSettingsWithOllama(ollama: NovaSettings['aiProviders']['ollama'])
 }
 
 describe('AI model registry', () => {
+	test('includes Claude Opus 4.8 in the Claude picker list', () => {
+		const claudeModels = getAvailableModels('claude');
+
+		expect(claudeModels[0]).toEqual({ value: 'claude-opus-4-8', label: 'Claude Opus 4.8' });
+	});
+
+	test('maps Claude Opus 4.8 to Claude context metadata', () => {
+		expect(getProviderTypeForModel('claude-opus-4-8')).toBe('claude');
+		expect(getContextLimit('claude', 'claude-opus-4-8')).toBe(1000000);
+		expect(getModelMaxOutputTokens('claude', 'claude-opus-4-8')).toBe(128000);
+	});
+
 	test('includes GPT-5.5 models in the OpenAI picker list', () => {
 		const openaiModels = getAvailableModels('openai');
 

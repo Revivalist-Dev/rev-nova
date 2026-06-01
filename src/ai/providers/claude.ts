@@ -192,6 +192,7 @@ export class ClaudeProvider implements AIProvider {
 
 			// Return current available models (from API docs)
 			const models = [
+				'claude-opus-4-8',
 				'claude-opus-4-7',
 				'claude-opus-4-6',
 				'claude-sonnet-4-6',
@@ -217,5 +218,5 @@ export class ClaudeProvider implements AIProvider {
 // sending it returns a 400 "temperature is deprecated for this model" error.
 // Extend this predicate as additional models drop the parameter.
 export function modelAcceptsTemperature(model: string): boolean {
-	return !model.startsWith('claude-opus-4-7');
+	return !model.startsWith('claude-opus-4-7') && !model.startsWith('claude-opus-4-8');
 }

@@ -782,7 +782,7 @@ export class NovaSettingTab extends PluginSettingTab {
 			case 'claude': {
 				const claudeProvider = new ClaudeProvider(this.plugin.settings.aiProviders.claude, this.plugin.settings.general, tempTimeoutManager);
 				// For Claude, just test a minimal completion instead of getAvailableModels
-				await claudeProvider.complete('You are a helpful assistant.', 'Hi', { maxTokens: 1 });
+				await claudeProvider.complete('You are a helpful assistant.', 'Hi', { maxTokens: 8 });
 				return {};
 			}
 			case 'openai': {

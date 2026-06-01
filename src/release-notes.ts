@@ -14,6 +14,14 @@ export interface ReleaseNotesEntry {
 
 export const RELEASE_NOTES: Record<string, string> = {
 	// Add entries before running `npm version`. The /release command handles this.
+	'1.6.3': [
+		'## What\'s New in Nova 1.6.3',
+		'',
+		'### New Models',
+		'',
+		'- **Claude Opus 4.8 is available.** Anthropic\'s latest Opus model is now selectable in the Claude model picker with its 1M-token context window.',
+		'- **Opus requests avoid deprecated sampling settings.** Nova omits `temperature` for Opus 4.8, matching Anthropic\'s Messages API requirements so requests complete instead of returning a parameter error.',
+	].join('\n'),
 	'1.6.2': [
 		'## What\'s New in Nova 1.6.2',
 		'',
@@ -69,22 +77,6 @@ export const RELEASE_NOTES: Record<string, string> = {
 		'',
 		'### Release Notes',
 		'- **Update notes now show more context.** When Nova opens the update notes tab, it now shows the current release plus two recent prior releases in a cleaner, easier-to-scan layout.',
-	].join('\n'),
-	'1.5.4': [
-		'## What\'s New in Nova 1.5.4',
-		'',
-		'### Bug Fixes',
-		'- **Claude Opus 4.7 now works.** 1.5.3 added Opus 4.7 to the model picker, but Anthropic removed support for the `temperature` parameter on this model, so every request returned a 400 error. Nova now omits `temperature` for Opus 4.7 requests while keeping it for every other model.',
-		'- **Removed GPT-5.5 from the picker.** It was listed in 1.5.3 in anticipation of release, but OpenAI has not yet made the model available via API. It will be added back when the model ships.',
-	].join('\n'),
-	'1.5.3': [
-		'## What\'s New in Nova 1.5.3',
-		'',
-		'### New Models',
-		'- **Claude Opus 4.7** and **GPT-5.5** are now selectable in the model picker for their respective providers.',
-		'',
-		'### Bug Fixes',
-		'- **Further reduced typing freezes in long notes.** 1.5.2 cut the problem back but didn\'t eliminate it. The scheduler now defers analysis to a browser idle slice once the debounce fires, so if you keep typing past the debounce, the work yields to your keystrokes instead of blocking them. The analyzer itself also does less work per run: duplicate passive-voice scans were removed, position lookups are deduped, and lines with no inline code skip an unnecessary per-character copy.',
 	].join('\n'),
 };
 
