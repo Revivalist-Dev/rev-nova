@@ -14,6 +14,20 @@ export interface ReleaseNotesEntry {
 
 export const RELEASE_NOTES: Record<string, string> = {
 	// Add entries before running `npm version`. The /release command handles this.
+	'1.7.0': [
+		'## What\'s New in Nova 1.7.0',
+		'',
+		'### OpenAI-Compatible Endpoints',
+		'',
+		'- **Connect Nova to OpenAI-compatible Chat Completions providers.** Use LM Studio, LocalAI, LiteLLM, OpenRouter, and other compatible gateways from the new provider settings.',
+		'- **Model setup is easier.** Test connection refreshes `/models` and lets you select one model in settings; if `/models` is unavailable, Nova validates a manually entered model with a tiny completion.',
+		'- **The sidebar stays focused.** OpenAI-compatible providers show only the selected model in the main model picker, so large catalogs do not flood the dropdown.',
+		'- **Mobile handling is clearer.** Cloud-compatible endpoints can run on mobile, while localhost, private-network, `.local`, and single-hostname URLs remain desktop-only.',
+		'',
+		'### Polish',
+		'',
+		'- **Provider settings and sidebar layout are cleaner in Obsidian 1.13.** The settings cards, connection buttons, secure inputs, and sidebar model picker now keep their intended spacing in both the original and popout settings layouts.',
+	].join('\n'),
 	'1.6.3': [
 		'## What\'s New in Nova 1.6.3',
 		'',
@@ -68,15 +82,6 @@ export const RELEASE_NOTES: Record<string, string> = {
 		'',
 		'- **General prose margin hints were retired.** Smart Fill marker affordances remain, but general prose suggestions now live in Prose Linter where they can be filtered, explained, jumped to, and reviewed consistently.',
 		'- **Large-note handling is safer.** Nova avoids stale review highlights after edits, validates exact ranges before applying local replacements, and keeps oversized analysis paths explicit.',
-	].join('\n'),
-	'1.5.5': [
-		'## What\'s New in Nova 1.5.5',
-		'',
-		'### New Models',
-		'- **GPT-5.5 and GPT-5.5 Pro are available.** OpenAI\'s latest GPT-5.5 models are now selectable in the model picker.',
-		'',
-		'### Release Notes',
-		'- **Update notes now show more context.** When Nova opens the update notes tab, it now shows the current release plus two recent prior releases in a cleaner, easier-to-scan layout.',
 	].join('\n'),
 };
 
