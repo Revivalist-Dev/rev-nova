@@ -1,7 +1,7 @@
 ---
 name: nova-codebase
 description: Auto-generated Nova codebase map. Regenerate with $nova-codebase-map.
-generated: 2026-05-08
+generated: 2026-06-12
 ---
 
 # Nova Codebase Map
@@ -11,10 +11,10 @@ generated: 2026-05-08
 
 ## Summary
 
-- Files scanned: 75
-- Files with `@file` descriptions: 75
+- Files scanned: 76
+- Files with `@file` descriptions: 76
 - Files missing `@file` descriptions: 0
-- Local dependency edges: 227
+- Local dependency edges: 235
 
 ## File Structure
 
@@ -22,9 +22,9 @@ generated: 2026-05-08
 
 | File | Description | Key Exports |
 |------|-------------|-------------|
-| `models.ts` | Models - Centralized model definitions and context limits for all AI providers | `ContextLimit`, `ModelConfig`, `ModelDefinition`, `OLLAMA_DEFAULT_CONTEXT`, `ProviderContextLimits`, `getAvailableModels`, `getContextLimit`, `getModelMaxOutputTokens`, `getProviderContextLimits`, `getProviderTypeForModel`, `hasKnownContextLimit` |
+| `models.ts` | Models - Centralized model definitions and context limits for all AI providers | `ContextLimit`, `ModelConfig`, `ModelDefinition`, `OLLAMA_DEFAULT_CONTEXT`, `OPENAI_COMPATIBLE_DEFAULT_CONTEXT`, `ProviderContextLimits`, `getAvailableModels`, `getContextLimit`, `getModelMaxOutputTokens`, `getProviderContextLimits`, `getProviderTypeForModel`, `hasKnownContextLimit` |
 | `provider-manager.ts` | AIProviderManager - Manages AI provider instances and model selection | `AIProviderManager` |
-| `types.ts` | AITypes - Type definitions for AI providers, messages, and streaming | `AIGenerationOptions`, `AIMessage`, `AIProvider`, `AIProviderSettings`, `AIStreamResponse`, `PlatformSettings`, `ProviderConfig`, `ProviderType` |
+| `types.ts` | AITypes - Type definitions for AI providers, messages, and streaming | `AIGenerationOptions`, `AIMessage`, `AIProvider`, `AIProviderSettings`, `AIStreamResponse`, `PlatformModelSettings`, `PlatformSettings`, `ProviderConfig`, `ProviderType` |
 
 ### AI Providers (src/ai/providers)
 
@@ -33,6 +33,7 @@ generated: 2026-05-08
 | `claude.ts` | ClaudeProvider - Anthropic Claude API integration | `ClaudeProvider`, `modelAcceptsTemperature` |
 | `google.ts` | GoogleProvider - Google Gemini API integration | `GoogleProvider` |
 | `ollama.ts` | OllamaProvider - Local Ollama API integration | `OllamaProvider` |
+| `openai-compatible.ts` | OpenAICompatibleProvider - Chat Completions integration for OpenAI-compatible endpoints | `OpenAICompatibleProvider`, `isLocalOpenAICompatibleBaseUrl`, `normalizeOpenAICompatibleBaseUrl` |
 | `openai.ts` | OpenAIProvider - OpenAI GPT API integration | `OpenAIProvider` |
 
 ### Core Layer (src/core)
@@ -54,7 +55,7 @@ generated: 2026-05-08
 | `vault-analyzer.ts` | VaultAnalyzer - Vault-wide writing analysis with incremental caching and history snapshots | `DashboardCacheFile`, `DashboardHistoryFile`, `DocumentAnalysisSummary`, `VaultAnalyzer`, `VaultSnapshot` |
 | `writing-analysis-normalizer.ts` | WritingAnalysisNormalizer - Position-stable Markdown masking for local writing analysis | `FrontmatterInfo`, `LineInfo`, `NormalizeMarkdownOptions`, `NormalizedMarkdown`, `buildLineInfos`, `detectFrontmatter`, `indexToPosition`, `normalizeMarkdownForWritingAnalysis` |
 | `writing-analysis-runner.ts` | WritingAnalysisRunner - Shared run-token helpers for deterministic writing analysis | `AnalysisRunToken`, `createAnalysisRunToken`, `isStaleAnalysisRun`, `measureElapsedMs` |
-| `writing-analysis.ts` | WritingAnalysis - Deterministic writing quality analysis helpers | `AdverbMatch`, `MAX_LIVE_ANALYSIS_CHAR_LENGTH`, `PassiveVoiceMatch`, `SentenceAnalysis`, `WeakIntensifierMatch`, `WritingAnalysis`, `WritingAnalysisOptions`, `analyzeWriting`, `clearWritingAnalysisCache`, `getCacheSizeForTests`, `hasWritingAnalysisOptOut`, `hashContent` |
+| `writing-analysis.ts` | WritingAnalysis - Deterministic writing quality analysis helpers | `AdverbMatch`, `MAX_PROSE_LINTER_ANALYSIS_CHAR_LENGTH`, `MAX_WRITING_ANALYSIS_CHAR_LENGTH`, `PassiveVoiceMatch`, `SentenceAnalysis`, `WeakIntensifierMatch`, `WritingAnalysis`, `WritingAnalysisOptions`, `analyzeWriting`, `clearWritingAnalysisCache`, `getCacheSizeForTests`, `hasWritingAnalysisOptOut`, `hashContent` |
 | `writing-score.ts` | WritingScore - Composite writing score helpers for dashboard analysis | `DEFAULT_TARGET_READABILITY_GRADE`, `WRITING_SCORE_MIN_WORDS`, `WRITING_SCORE_THRESHOLDS`, `WritingScore`, `WritingScoreLabel`, `calculateWritingScore`, `getWritingScoreLabel`, `getWritingScoreValueClass`, `scoreClarityPillar`, `scoreConcisenessPillar`, `scoreDisciplinePillar`, `scoreVarietyPillar` |
 
 ### Core Commands (src/core/commands)
@@ -137,7 +138,7 @@ generated: 2026-05-08
 
 | File | Description | Key Exports |
 |------|-------------|-------------|
-| `constants.ts` | Constants - Shared constants and magic strings | `CHALLENGE_SYSTEM_PROMPT`, `CHATGPT_ALIAS`, `CUSTOM_PROMPT_HISTORY_MAX`, `GEMINI_ALIAS`, `KOFI_URL`, `NOVA_API_KEYS_SALT`, `NOVA_CONVERSATIONS_STORAGE_KEY`, `NOVA_STAR_ICON`, `NOVA_SUPERNOVA_ICON`, `PROVIDER_CLAUDE`, `PROVIDER_GOOGLE`, `PROVIDER_OLLAMA`, `PROVIDER_OPENAI`, `VIEW_TYPE_NOVA_SIDEBAR` |
+| `constants.ts` | Constants - Shared constants and magic strings | `CHALLENGE_SYSTEM_PROMPT`, `CHATGPT_ALIAS`, `CUSTOM_PROMPT_HISTORY_MAX`, `GEMINI_ALIAS`, `KOFI_URL`, `NOVA_API_KEYS_SALT`, `NOVA_CONVERSATIONS_STORAGE_KEY`, `NOVA_STAR_ICON`, `NOVA_SUPERNOVA_ICON`, `PROVIDER_CLAUDE`, `PROVIDER_GOOGLE`, `PROVIDER_OLLAMA`, `PROVIDER_OPENAI`, `VIEW_TYPE_NOVA_SIDEBAR`, `VIEW_TYPE_PROSE_LINTER` |
 | `release-notes.ts` | Release notes content for each version. | `RELEASE_NOTES`, `ReleaseNotesEntry`, `getRecentReleaseNotes`, `getReleaseNotes` |
 | `settings.ts` | Settings - Plugin settings UI and configuration | `CustomCommand`, `DEFAULT_SETTINGS`, `DashboardSettings`, `NovaSettingTab`, `NovaSettings`, `WritingAnalysisSettings` |
 
@@ -152,6 +153,7 @@ generated: 2026-05-08
 - `./types`
 - `./providers/claude`
 - `./providers/openai`
+- `./providers/openai-compatible`
 - `./providers/google`
 - `./providers/ollama`
 - `../settings`
@@ -178,6 +180,12 @@ generated: 2026-05-08
 - `../types`
 - `../../utils/timeout-manager`
 - `../../utils/logger`
+- `obsidian` (external)
+
+**src/ai/providers/openai-compatible.ts** imports:
+- `../types`
+- `../../utils/logger`
+- `../../utils/timeout-manager`
 - `obsidian` (external)
 
 **src/ai/providers/openai.ts** imports:
@@ -338,9 +346,7 @@ generated: 2026-05-08
 **src/features/commands/ui/MarginIndicators.ts** imports:
 - `../../../utils/logger`
 - `../../../utils/timeout-manager`
-- `../core/SmartVariableResolver`
 - `../core/CommandEngine`
-- `../core/SmartTimingEngine`
 - `./InsightPanel`
 - `./codemirror-decorations`
 - `../types`
@@ -421,12 +427,13 @@ generated: 2026-05-08
 
 **src/ui/prose-linter-view.ts** imports:
 - `../../main`
+- `../constants`
 - `../core/writing-analysis`
 - `../core/writing-analysis-runner`
 - `../features/prose-linter/prose-linter-issues`
 - `../features/prose-linter/prose-linter-rendering`
 - `../features/prose-linter/prose-linter-runner`
-- `../features/prose-linter/prose-linter-summary`
+- `../features/prose-linter/prose-linter-store`
 - `../features/prose-linter/prose-linter-types`
 - `./writing-analysis-manager`
 - `obsidian` (external)
@@ -461,6 +468,7 @@ generated: 2026-05-08
 - `./context-manager`
 - `../ai/models`
 - `../ai/types`
+- `../ai/providers/openai-compatible`
 - `./input-handler`
 - `./command-system`
 - `./context-manager`
@@ -474,6 +482,7 @@ generated: 2026-05-08
 - `./context-quick-panel`
 - `./writing-analysis-manager`
 - `./writing-stats-panel`
+- `../core/writing-analysis`
 - `obsidian` (external)
 
 **src/ui/streaming-manager.ts** imports:
@@ -492,6 +501,7 @@ generated: 2026-05-08
 - `../core/writing-analysis`
 - `../core/writing-analysis-runner`
 - `../features/commands/ui/codemirror-decorations`
+- `../features/prose-linter/prose-linter-types`
 - `../constants`
 - `./writing-dashboard-view`
 - `../utils/logger`
@@ -550,28 +560,30 @@ generated: 2026-05-08
 - `./ui/sidebar-view`
 - `./ai/providers/claude`
 - `./ai/providers/openai`
+- `./ai/providers/openai-compatible`
 - `./ai/providers/google`
 - `./ai/providers/ollama`
 - `./utils/logger`
 - `./features/commands/types`
 - `./utils/timeout-manager`
 - `./ui/custom-command-modal`
+- `./ai/models`
 - `obsidian` (external)
 
 ## Recent Changes
 
 | Commit | Summary |
 |--------|---------|
-| `0ed21fc` | chore(commands): remove stale quickfix indicator code |
-| `4f71865` | chore(release): bump version to 1.5.5 |
-| `5da071c` | feat(release): prepare 1.5.5 updates |
-| `ca9d1e1` | 1.5.4 |
-| `87428de` | docs(release-notes): add notes for 1.5.4 |
-| `857f544` | fix(models): comment out GPT-5.5 until OpenAI releases it to API |
-| `32297bf` | fix(claude): omit deprecated temperature parameter for Opus 4.7 |
-| `33652ee` | 1.5.3 |
-| `6899c16` | docs(release-notes): add notes for 1.5.3 |
-| `c2ba3ea` | fix(writing-analysis): defer analysis to idle slice and cut per-run work |
+| `e126a15` | docs: clarify feedback-only contribution policy |
+| `fcb9238` | chore(release): bump version to 1.6.3 |
+| `dcfaadd` | feat: add Claude Opus 4.8 |
+| `8ec914b` | chore(release): bump version to 1.6.2 |
+| `d6bfde6` | fix: polish prose linter review workflow |
+| `a80e384` | chore(release): bump version to 1.6.1 |
+| `d23adcd` | docs(release-notes): add notes for 1.6.1 |
+| `5adf8c6` | fix: improve Ollama model handling |
+| `1e5a145` | chore(release): bump version to 1.6.0 |
+| `98d29ba` | docs(release-notes): add notes for 1.6.0 |
 
 ## Missing File Headers
 

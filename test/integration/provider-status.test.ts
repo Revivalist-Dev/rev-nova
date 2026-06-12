@@ -9,6 +9,8 @@ describe('Provider Status Logic', () => {
         expect(hasProviderConfig('claude', { apiKey: '' })).toBe(false);
         expect(hasProviderConfig('ollama', { baseUrl: 'http://localhost:11434' })).toBe(true);
         expect(hasProviderConfig('ollama', { baseUrl: '' })).toBe(false);
+        expect(hasProviderConfig('openai-compatible', { baseUrl: 'https://openrouter.ai/api/v1' })).toBe(true);
+        expect(hasProviderConfig('openai-compatible', { baseUrl: '' })).toBe(false);
     });
 
     it('should format status display text correctly', () => {
@@ -28,6 +30,7 @@ function hasProviderConfig(provider: string, config: any): boolean {
         case 'google':
             return !!config.apiKey;
         case 'ollama':
+        case 'openai-compatible':
             return !!config.baseUrl;
         default:
             return false;

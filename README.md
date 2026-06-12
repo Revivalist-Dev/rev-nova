@@ -2,7 +2,7 @@
 
 AI writing editor, native to Obsidian. Sharpen your prose, refine selected text, write at the cursor, and review local clarity checks. Not a generator. An editor.
 
-Use local AI (Ollama, LM Studio) or your own API keys (Claude, OpenAI, Gemini). Nova never sees your content, never stores your conversations, and collects zero telemetry.
+Use the local Ollama API, OpenAI-compatible endpoints like LM Studio, or your own API keys for Claude, OpenAI, and Gemini. Nova never sees your content, never stores your conversations, and collects zero telemetry.
 
 ---
 
@@ -82,10 +82,20 @@ Nova doesn't index your vault. It works with the document you have open plus any
 ## Get Started
 
 1. Obsidian → Community Plugins → Search "Nova" → Install
-2. Add your API key (or set up local AI)
+2. Configure a provider: cloud, local, or OpenAI-compatible
 3. Select any text → Right-click → Try it
 
 Need help? [Read the full Nova User Guide](https://novawriter.ai/guide)
+
+---
+
+## AI Providers
+
+Nova supports Claude, OpenAI, Gemini, Ollama's local API, and OpenAI-compatible Chat Completions endpoints such as LM Studio, LocalAI, LiteLLM, OpenRouter, and other custom gateways.
+
+For OpenAI-compatible endpoints, enter the API root exactly as the provider expects, such as `http://localhost:1234/v1` or `https://example.com/api/v1`. Nova appends `/models` and `/chat/completions`; it does not guess or add `/v1` for you. API keys are optional for endpoints that do not require authentication.
+
+If `/models` is unavailable, enter the model name manually and test the connection. Nova will validate the saved model with a tiny chat completion. Cloud-compatible endpoints can be used on mobile when mobile support is enabled; local, private network, `.local`, and single-hostname URLs are desktop-only.
 
 ---
 

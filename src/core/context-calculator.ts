@@ -35,12 +35,15 @@ export function calculateContextUsage(
     fileAttachments: Array<{content: string}> = [],
     currentInput: string = '',
     recentResponse: string = '',
-    ollamaContextSize: number = 32000
+    ollamaContextSize: number = 32000,
+    openAICompatibleContextSize: number = 32000
 ): ContextUsage {
     // Get context limit for the provider/model
     let contextLimit: number;
     if (provider.toLowerCase() === 'ollama') {
         contextLimit = ollamaContextSize;
+    } else if (provider.toLowerCase() === 'openai-compatible') {
+        contextLimit = openAICompatibleContextSize;
     } else {
         contextLimit = getContextLimit(provider, model);
     }

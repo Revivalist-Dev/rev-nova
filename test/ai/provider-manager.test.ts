@@ -36,6 +36,7 @@ jest.mock('../../src/ai/models', () => ({
         if (modelValue.includes('gpt')) return 'openai';
         if (modelValue.includes('gemini')) return 'google';
         if (modelValue.includes('llama')) return 'ollama';
+        if (modelValue.includes('compatible')) return 'openai-compatible';
         return null;
     }),
     getModelMaxOutputTokens: jest.fn(() => 64000)
@@ -55,7 +56,14 @@ describe('AIProviderManager', () => {
                 claude: { apiKey: 'claude-key' },
                 openai: { apiKey: 'openai-key' },
                 google: { apiKey: 'google-key' },
-                ollama: { baseUrl: 'http://localhost:11434', model: 'llama2' }
+                ollama: { baseUrl: 'http://localhost:11434', model: 'llama2' },
+                'openai-compatible': {
+                    baseUrl: 'https://openrouter.ai/api/v1',
+                    model: 'compatible-model',
+                    models: ['compatible-model'],
+                    modelsLastRefreshed: '2026-06-12T10:30:00.000Z',
+                    contextSize: 32000
+                }
             },
             platformSettings: {
                 desktop: {
@@ -215,6 +223,7 @@ describe('AIProviderManager', () => {
             expect(allowedProviders).toContain('openai');
             expect(allowedProviders).toContain('google');
             expect(allowedProviders).toContain('ollama');
+            expect(allowedProviders).toContain('openai-compatible');
         });
 
         test('should not restrict any provider', () => {
@@ -223,6 +232,7 @@ describe('AIProviderManager', () => {
             expect(manager.isProviderAllowed('openai')).toBe(true);
             expect(manager.isProviderAllowed('google')).toBe(true);
             expect(manager.isProviderAllowed('ollama')).toBe(true);
+            expect(manager.isProviderAllowed('openai-compatible')).toBe(true);
         });
 
         test('should work the same regardless of Supernova status', async () => {
@@ -267,6 +277,67 @@ describe('AIProviderManager', () => {
             expect(allowedProviders).toContain('ollama');
             expect(allowedProviders).toContain('google');
             expect(allowedProviders).toContain('claude');
+            expect(allowedProviders).toContain('openai-compatible');
+        });
+
+        test('should use explicit selectedProvider for colliding compatible model ids', async () => {
+            mockSettings.platformSettings.desktop = {
+                selectedModel: 'gpt-5',
+                selectedProvider: 'openai-compatible'
+            };
+            mockSettings.aiProviders['openai-compatible'].model = 'gpt-5';
+
+            const compatibleProvider = {
+                name: 'OpenAI-compatible (LM Studio and others)',
+                isAvailable: jest.fn().mockResolvedValue(true),
+                complete: jest.fn().mockResolvedValue('Compatible response')
+            };
+
+            manager['providers'].set('openai-compatible', compatibleProvider as unknown as AIProvider);
+
+            const result = await manager.complete('System prompt', 'User prompt');
+
+            expect(compatibleProvider.complete).toHaveBeenCalledWith('System prompt', 'User prompt', {
+                temperature: 0.7,
+                maxTokens: 4000,
+                model: 'gpt-5'
+            });
+            expect(result).toBe('Compatible response');
+        });
+
+        test('should not run compatible provider from cached models without a selected model', async () => {
+            mockSettings.platformSettings.desktop = {
+                selectedModel: 'stale-compatible-model',
+                selectedProvider: 'openai-compatible'
+            };
+            mockSettings.aiProviders['openai-compatible'].model = '';
+            mockSettings.aiProviders['openai-compatible'].models = ['fresh-compatible-model'];
+
+            const compatibleProvider = {
+                name: 'OpenAI-compatible (LM Studio and others)',
+                isAvailable: jest.fn().mockReturnValue(false),
+                complete: jest.fn()
+            };
+
+            manager['providers'].set('openai-compatible', compatibleProvider as unknown as AIProvider);
+
+            await expect(manager.complete('System prompt', 'User prompt'))
+                .rejects.toThrow('Nova is disabled or no AI provider is available');
+            expect(compatibleProvider.complete).not.toHaveBeenCalled();
+        });
+
+        test('should hide local compatible endpoints on mobile', () => {
+            (Platform as unknown as MockPlatform).isMobile = true;
+            mockSettings.aiProviders['openai-compatible'].baseUrl = 'http://localhost:1234/v1';
+
+            const localCompatibleManager = new AIProviderManager(mockSettings, featureManager);
+            expect(localCompatibleManager.getAllowedProviders()).not.toContain('openai-compatible');
+
+            mockSettings.aiProviders['openai-compatible'].baseUrl = 'https://openrouter.ai/api/v1';
+            const cloudCompatibleManager = new AIProviderManager(mockSettings, featureManager);
+            expect(cloudCompatibleManager.getAllowedProviders()).toContain('openai-compatible');
+
+            (Platform as unknown as MockPlatform).isMobile = false;
         });
     });
 });

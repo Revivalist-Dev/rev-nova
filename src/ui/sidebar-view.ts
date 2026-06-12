@@ -7,8 +7,9 @@ import { DocumentAnalyzer } from '../core/document-analysis';
 import NovaPlugin from '../../main';
 import { EditCommand, EditResult } from '../core/types';
 import { MultiDocContext } from './context-manager';
-import { getAvailableModels, getProviderTypeForModel } from '../ai/models';
+import { getAvailableModels } from '../ai/models';
 import { ProviderType } from '../ai/types';
+import { isLocalOpenAICompatibleBaseUrl } from '../ai/providers/openai-compatible';
 import { InputHandler } from './input-handler';
 import { CommandSystem } from './command-system';
 import { ContextManager } from './context-manager';
@@ -847,7 +848,7 @@ export class NovaSidebarView extends ItemView {
 
 		// Only add Ollama on desktop
 		if (Platform.isDesktopApp) {
-			commands.push({ trigger: 'ollama', name: 'Switch to Ollama', description: 'Local AI models' });
+			commands.push({ trigger: 'ollama', name: 'Switch to Ollama', description: 'Local Ollama API models' });
 		}
 
 		// Add custom commands if feature is enabled
@@ -2022,7 +2023,7 @@ USER REQUEST: ${processedMessage}`;
 		privacyIndicator.addClass('nova-privacy-indicator-styled');
 		
 		if (currentProviderType) {
-			const isLocalProvider = currentProviderType === 'ollama';
+			const isLocalProvider = this.isLocalProvider(currentProviderType);
 			
 			// Add pill styling classes
 			privacyIndicator.addClass('nova-status-pill');
@@ -2103,6 +2104,62 @@ USER REQUEST: ${processedMessage}`;
 		});
 	}
 
+	private createProviderModelKey(providerType: ProviderType, modelValue: string): string {
+		return `${providerType}::${modelValue}`;
+	}
+
+	private parseProviderModelKey(providerModelKey: string): { provider: ProviderType; model: string } | null {
+		const separatorIndex = providerModelKey.indexOf('::');
+		if (separatorIndex <= 0) {
+			return null;
+		}
+
+		const provider = providerModelKey.slice(0, separatorIndex);
+		const model = providerModelKey.slice(separatorIndex + 2);
+		if (!model || !this.isConfigurableProviderType(provider)) {
+			return null;
+		}
+
+		return { provider, model };
+	}
+
+	private isConfigurableProviderType(provider: string): provider is Exclude<ProviderType, 'none'> {
+		return provider === 'claude'
+			|| provider === 'openai'
+			|| provider === 'google'
+			|| provider === 'ollama'
+			|| provider === 'openai-compatible';
+	}
+
+	private isLocalProvider(providerType: string): boolean {
+		return providerType === 'ollama'
+			|| (
+				providerType === 'openai-compatible'
+				&& isLocalOpenAICompatibleBaseUrl(this.plugin.settings.aiProviders['openai-compatible']?.baseUrl)
+			);
+	}
+
+	private hasProviderRuntimeConfig(providerType: ProviderType): boolean {
+		if (!this.isConfigurableProviderType(providerType)) {
+			return false;
+		}
+
+		const providerConfig = this.plugin.settings.aiProviders[providerType];
+		if (!providerConfig) {
+			return false;
+		}
+
+		if (providerType === 'ollama') {
+			return !!providerConfig.baseUrl;
+		}
+
+		if (providerType === 'openai-compatible') {
+			return !!providerConfig.baseUrl && !!providerConfig.model;
+		}
+
+		return !!providerConfig.apiKey;
+	}
+
 	/**
 	 * Update provider dropdown options with optgroups
 	 */
@@ -2136,12 +2193,10 @@ USER REQUEST: ${processedMessage}`;
 		for (const [providerType, isAvailable] of providerAvailability) {
 			if (providerType === 'none' || !isAvailable) continue;
 
-			// Check if provider has API key configured
-			const providerConfig = this.plugin.settings.aiProviders[providerType];
-			const hasApiKey = providerConfig?.apiKey;
-			if (!hasApiKey && providerType !== 'ollama') continue;
+			if (!this.hasProviderRuntimeConfig(providerType)) continue;
 
 			// Check if provider is connected
+			const providerConfig = this.plugin.settings.aiProviders[providerType];
 			const providerStatus = providerConfig?.status;
 			if (!providerStatus || providerStatus.state !== 'connected') continue;
 			
@@ -2156,14 +2211,14 @@ USER REQUEST: ${processedMessage}`;
 			
 			for (const model of models) {
 				const option = group.createEl('option');
-				option.value = `${providerType}-${model.value}`;
+				option.value = this.createProviderModelKey(providerType, model.value);
 				option.textContent = model.label;
 			}
 		}
 		
 		// Set current selection based on provider and model
 		if (currentProvider && currentModel) {
-			const currentKey = `${currentProvider}-${currentModel}`;
+			const currentKey = this.createProviderModelKey(currentProvider as ProviderType, currentModel);
 			this.providerDropdown.setValue(currentKey);
 		}
 	}
@@ -2173,19 +2228,17 @@ USER REQUEST: ${processedMessage}`;
 	 */
 	private async switchProviderModel(providerModelKey: string): Promise<void> {
 		try {
-			// Parse provider-model key (e.g., "claude-claude-3-5-sonnet-20241022")
-			const parts = providerModelKey.split('-');
-			if (parts.length < 2) return;
+			const selection = this.parseProviderModelKey(providerModelKey);
+			if (!selection) return;
 			
-			const provider = parts[0]; // e.g., "claude"
-			const model = parts.slice(1).join('-'); // e.g., "claude-3-5-sonnet-20241022"
+			const { provider, model } = selection;
 			
 			// Set user-initiated flag to prevent spurious success messages
 			this.isUserInitiatedProviderChange = true;
 
 			// Update the model in settings
-			this.plugin.settingTab.setCurrentModel(model);
-			if (provider === 'claude' || provider === 'openai' || provider === 'google' || provider === 'ollama') {
+			this.plugin.settingTab.setCurrentModel(model, provider);
+			if (this.isConfigurableProviderType(provider)) {
 				this.plugin.settings.aiProviders[provider].model = model;
 			}
 			await this.plugin.saveSettings();
@@ -2227,7 +2280,11 @@ USER REQUEST: ${processedMessage}`;
 	 * Get current model for a provider type
 	 */
 	private getCurrentModel(providerType: string): string {
-		const providerConfig = this.plugin.settings.aiProviders[providerType as 'claude' | 'openai' | 'google' | 'ollama'];
+		if (!this.isConfigurableProviderType(providerType)) {
+			return '';
+		}
+
+		const providerConfig = this.plugin.settings.aiProviders[providerType];
 		const currentModel = providerConfig?.model;
 		
 		if (currentModel) {
@@ -2249,7 +2306,7 @@ USER REQUEST: ${processedMessage}`;
 		
 		// If not found in specified provider, search all providers
 		if (!model) {
-			const providerTypes = ['claude', 'openai', 'google', 'ollama'];
+			const providerTypes = ['claude', 'openai', 'google', 'ollama', 'openai-compatible'];
 			for (const searchProviderType of providerTypes) {
 				if (searchProviderType === providerType) continue; // Already checked
 				models = this.getAvailableModels(searchProviderType);
@@ -2273,9 +2330,12 @@ USER REQUEST: ${processedMessage}`;
 			// Update platform settings for persistence (this is what actually matters)
 			const platform = Platform.isMobile ? 'mobile' : 'desktop';
 			this.plugin.settings.platformSettings[platform].selectedModel = modelValue;
+			this.plugin.settings.platformSettings[platform].selectedProvider = providerType as ProviderType;
 
 			// Also update provider model setting for consistency
-			const providerConfig = this.plugin.settings.aiProviders[providerType as 'claude' | 'openai' | 'google' | 'ollama'];
+			const providerConfig = this.isConfigurableProviderType(providerType)
+				? this.plugin.settings.aiProviders[providerType]
+				: null;
 			if (providerConfig) {
 				providerConfig.model = modelValue;
 			}
@@ -2339,7 +2399,8 @@ USER REQUEST: ${processedMessage}`;
 			'claude': 'Anthropic',
 			'openai': 'OpenAI',
 			'google': 'Google',
-			'ollama': 'Ollama',
+			'ollama': 'Ollama (local API)',
+			'openai-compatible': 'OpenAI-compatible (LM Studio and others)',
 			'none': 'None'
 		};
 		return names[providerType] || providerType;
@@ -2381,6 +2442,7 @@ USER REQUEST: ${processedMessage}`;
 			'openai': 'var(--color-green)',
 			'google': 'var(--color-blue)',
 			'ollama': 'var(--color-purple)',
+			'openai-compatible': 'var(--color-cyan)',
 			'none': 'var(--text-muted)'
 		};
 		return colors[providerType] || 'var(--text-success)';
@@ -2449,13 +2511,10 @@ USER REQUEST: ${processedMessage}`;
 		if (provider === 'mobile-settings' && status === 'enabled' && Platform.isMobile) {
 			const currentModel = this.plugin.aiProviderManager.getCurrentModel();
 			if (!currentModel || currentModel === '') {
-				const firstAvailableModel = await this.getFirstAvailableModel();
+				const firstAvailableModel = await this.getFirstAvailableProviderModel();
 				if (firstAvailableModel) {
-					const providerType = getProviderTypeForModel(firstAvailableModel, this.plugin.settings);
-					if (providerType) {
-						this.switchToModel(providerType, firstAvailableModel);
-						await this.plugin.saveSettings();
-					}
+					this.switchToModel(firstAvailableModel.providerType, firstAvailableModel.model);
+					await this.plugin.saveSettings();
 				}
 			}
 		}
@@ -2484,22 +2543,19 @@ USER REQUEST: ${processedMessage}`;
 		const { provider: failedProvider } = customEvent.detail;
 		
 		// Check if current model belongs to the failed provider
-		const currentModel = this.plugin.aiProviderManager.getCurrentModel();
-		const currentProviderType = getProviderTypeForModel(currentModel, this.plugin.settings);
+		const currentProviderType = await this.plugin.aiProviderManager.getCurrentProviderType();
 		
 		if (currentProviderType === failedProvider) {
 			// Current model is invalid - switch to first available model
-			const firstAvailableModel = await this.getFirstAvailableModel();
+			const firstAvailableModel = await this.getFirstAvailableProviderModel();
 			if (firstAvailableModel) {
 				// Switch to the fallback model
-				const fallbackProviderType = getProviderTypeForModel(firstAvailableModel, this.plugin.settings);
-				if (fallbackProviderType) {
-					this.switchToModel(fallbackProviderType, firstAvailableModel);
-				}
+				this.switchToModel(firstAvailableModel.providerType, firstAvailableModel.model);
 			} else {
 				// No available models - clear the selection
 				const platform = Platform.isMobile ? 'mobile' : 'desktop';
 				this.plugin.settings.platformSettings[platform].selectedModel = '';
+				this.plugin.settings.platformSettings[platform].selectedProvider = 'none';
 				await this.plugin.saveSettings();
 			}
 		}
@@ -2537,12 +2593,12 @@ USER REQUEST: ${processedMessage}`;
 	/**
 	 * Get the first available model from any working provider
 	 */
-	private async getFirstAvailableModel(): Promise<string | null> {
+	private async getFirstAvailableProviderModel(): Promise<{ providerType: ProviderType; model: string } | null> {
 		// Get provider availability status
 		const providerAvailability = await this.plugin.aiProviderManager.getAvailableProvidersWithStatus();
 		
-		// Provider priority order: Claude > OpenAI > Google > Ollama
-		const providerPriority: ProviderType[] = ['claude', 'openai', 'google', 'ollama'];
+		// Provider priority order: Claude > OpenAI > OpenAI-compatible > Google > Ollama
+		const providerPriority: ProviderType[] = ['claude', 'openai', 'openai-compatible', 'google', 'ollama'];
 		
 		for (const providerType of providerPriority) {
 			if (providerType === 'none') continue; // Skip 'none' provider type
@@ -2553,7 +2609,7 @@ USER REQUEST: ${processedMessage}`;
 			if (isAvailable && providerStatus?.state === 'connected') {
 				const models = getAvailableModels(providerType, this.plugin.settings);
 				if (models.length > 0) {
-					return models[0].value; // Return first model from this provider
+					return { providerType, model: models[0].value };
 				}
 			}
 		}

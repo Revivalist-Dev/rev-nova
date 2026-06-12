@@ -6,6 +6,7 @@ import { Platform } from 'obsidian';
 import { AIProvider, ProviderType, AIMessage, AIGenerationOptions, AIStreamResponse } from './types';
 import { ClaudeProvider } from './providers/claude';
 import { OpenAIProvider } from './providers/openai';
+import { OpenAICompatibleProvider, isLocalOpenAICompatibleBaseUrl } from './providers/openai-compatible';
 import { GoogleProvider } from './providers/google';
 import { OllamaProvider } from './providers/ollama';
 import { NovaSettings } from '../settings';
@@ -30,6 +31,7 @@ export class AIProviderManager {
 	initialize() {
 		this.providers.set('claude', new ClaudeProvider(this.settings.aiProviders.claude, this.settings.general, this.timeoutManager));
 		this.providers.set('openai', new OpenAIProvider(this.settings.aiProviders.openai, this.settings.general, this.timeoutManager));
+		this.providers.set('openai-compatible', new OpenAICompatibleProvider(this.settings.aiProviders['openai-compatible'], this.settings.general, this.timeoutManager));
 		this.providers.set('google', new GoogleProvider(this.settings.aiProviders.google, this.settings.general, this.timeoutManager));
 		this.providers.set('ollama', new OllamaProvider(this.settings.aiProviders.ollama, this.settings.general, this.timeoutManager));
 	}
@@ -78,16 +80,37 @@ export class AIProviderManager {
 	 * Get the selected model for the current platform
 	 */
 	private getSelectedModel(): string {
+		return this.getCurrentPlatformSettings().selectedModel;
+	}
+
+	private getCurrentPlatformSettings(): { selectedModel: string; selectedProvider?: ProviderType } {
 		const platform = Platform.isMobile ? 'mobile' : 'desktop';
-		const selectedModel = this.settings.platformSettings[platform].selectedModel;
-		
-		return selectedModel;
+		return this.settings.platformSettings[platform];
+	}
+
+	private getSelectedProviderType(): ProviderType | null {
+		const platformSettings = this.getCurrentPlatformSettings();
+		const selectedModel = platformSettings.selectedModel;
+
+		if (!selectedModel || selectedModel === 'none') {
+			return null;
+		}
+
+		const explicitProvider = platformSettings.selectedProvider;
+		const providerType = explicitProvider && explicitProvider !== 'none'
+			? explicitProvider
+			: this.getProviderForModel(selectedModel);
+
+		if (!providerType || providerType === 'none' || !this.getAllowedProviders().includes(providerType)) {
+			return null;
+		}
+
+		return providerType;
 	}
 
 
 	private async getAvailableProvider(): Promise<AIProvider | null> {
-		const selectedModel = this.getSelectedModel();
-		const providerType = this.getProviderForModel(selectedModel);
+		const providerType = this.getSelectedProviderType();
 		
 		if (!providerType || providerType === 'none') {
 			return null;
@@ -178,8 +201,7 @@ export class AIProviderManager {
 	}
 
 	async getCurrentProviderType(): Promise<string | null> {
-		const selectedModel = this.getSelectedModel();
-		const providerType = this.getProviderForModel(selectedModel);
+		const providerType = this.getSelectedProviderType();
 		
 		if (!providerType || providerType === 'none') {
 			return null;
@@ -217,11 +239,16 @@ export class AIProviderManager {
 	}
 
 	getAllowedProviders(): ProviderType[] {
-		// Ollama requires local server - not available on mobile
+		const cloudProviders: ProviderType[] = ['claude', 'openai', 'google', 'openai-compatible'];
+
 		if (Platform.isMobile) {
-			return ['claude', 'openai', 'google'];
+			const compatibleBaseUrl = this.settings.aiProviders['openai-compatible']?.baseUrl;
+			return isLocalOpenAICompatibleBaseUrl(compatibleBaseUrl)
+				? ['claude', 'openai', 'google']
+				: cloudProviders;
 		}
-		return ['claude', 'openai', 'google', 'ollama'];
+
+		return [...cloudProviders, 'ollama'];
 	}
 
 	/**
@@ -244,9 +271,8 @@ export class AIProviderManager {
 		return availabilityMap;
 	}
 
-	isProviderAllowed(_providerType: ProviderType): boolean {
-		// All providers are allowed
-		return true;
+	isProviderAllowed(providerType: ProviderType): boolean {
+		return this.getAllowedProviders().includes(providerType);
 	}
 
 	getProviderLimits(): { local: number; cloud: number } {
@@ -304,7 +330,7 @@ export class AIProviderManager {
 	 */
 	getModelSpecificMaxTokens(): number {
 		const selectedModel = this.getSelectedModel();
-		const providerType = this.getProviderForModel(selectedModel);
+		const providerType = this.getSelectedProviderType();
 		
 		if (providerType && providerType !== 'none') {
 			const modelLimit = getModelMaxOutputTokens(providerType, selectedModel);

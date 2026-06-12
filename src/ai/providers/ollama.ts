@@ -8,7 +8,7 @@ import { TimeoutManager } from '../../utils/timeout-manager';
 import { Logger } from '../../utils/logger';
 
 export class OllamaProvider implements AIProvider {
-	name = 'Ollama (Local)';
+	name = 'Ollama (local Ollama API)';
 	private config: ProviderConfig;
 	private generalSettings: { defaultTemperature: number; defaultMaxTokens: number };
 	private timeoutManager: TimeoutManager;

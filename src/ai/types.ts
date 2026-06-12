@@ -53,15 +53,17 @@ export interface AIProviderSettings {
 	openai: ProviderConfig;
 	google: ProviderConfig;
 	ollama: ProviderConfig;
+	'openai-compatible': ProviderConfig;
 }
 
-export type ProviderType = 'claude' | 'openai' | 'google' | 'ollama' | 'none';
+export type ProviderType = 'claude' | 'openai' | 'google' | 'ollama' | 'openai-compatible' | 'none';
+
+export interface PlatformModelSettings {
+	selectedModel: string;
+	selectedProvider?: ProviderType;
+}
 
 export interface PlatformSettings {
-	desktop: {
-		selectedModel: string;
-	};
-	mobile: {
-		selectedModel: string;
-	};
+	desktop: PlatformModelSettings;
+	mobile: PlatformModelSettings;
 }

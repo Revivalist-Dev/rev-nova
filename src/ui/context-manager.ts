@@ -933,6 +933,7 @@ export class ContextManager {
 		
 		// Always calculate context usage with fallback values
 		const ollamaDefaultContext = this.plugin?.settings?.aiProviders?.ollama?.contextSize || 32000;
+		const openAICompatibleContext = this.plugin?.settings?.aiProviders?.['openai-compatible']?.contextSize || 32000;
 		
 		const usage = calculateContextUsage(
 			providerType!,
@@ -941,7 +942,8 @@ export class ContextManager {
 			fileAttachments,
 			currentInput,
 			recentResponse,
-			ollamaDefaultContext
+			ollamaDefaultContext,
+			openAICompatibleContext
 		);
 		
 		return usage;

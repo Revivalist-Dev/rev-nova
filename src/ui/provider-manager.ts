@@ -91,7 +91,7 @@ export class ProviderManager {
 			const ollamaModel = this.plugin.settings.aiProviders?.ollama?.model;
 			if (ollamaModel && ollamaModel.trim()) {
 				const ollamaGroup = this.dropdown.selectEl.createEl('optgroup');
-				ollamaGroup.label = 'Ollama';
+				ollamaGroup.label = 'Ollama (local API)';
 				const option = ollamaGroup.createEl('option');
 				option.value = `ollama-${ollamaModel}`;
 				option.textContent = ollamaModel;

@@ -20,7 +20,14 @@ describe('Provider Dropdown Performance', () => {
 				claude: { apiKey: 'test-key', model: 'claude-3-5-sonnet-20241022' },
 				openai: { apiKey: 'test-key', model: 'gpt-4' },
 				google: { apiKey: 'test-key', model: 'gemini-pro' },
-				ollama: { baseUrl: 'http://localhost:11434', model: 'llama2' }
+				ollama: { baseUrl: 'http://localhost:11434', model: 'llama2' },
+				'openai-compatible': {
+					baseUrl: 'https://openrouter.ai/api/v1',
+					model: 'compatible-model',
+					models: ['compatible-model'],
+					modelsLastRefreshed: '2026-06-12T10:30:00.000Z',
+					contextSize: 32000
+				}
 			},
 			platformSettings: {
 				desktop: { selectedModel: 'claude-3-5-sonnet-20241022' },

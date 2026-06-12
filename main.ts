@@ -425,19 +425,19 @@ export default class NovaPlugin extends Plugin {
 		});
 	}
 
-	private migrateOllamaModelCache(): void {
-		const ollamaSettings = this.settings.aiProviders?.ollama;
-		if (!ollamaSettings) {
+	private migrateDynamicModelCache(provider: 'ollama' | 'openai-compatible'): void {
+		const providerSettings = this.settings.aiProviders?.[provider];
+		if (!providerSettings) {
 			return;
 		}
 
-		if (!Array.isArray(ollamaSettings.models)) {
-			ollamaSettings.models = [];
+		if (!Array.isArray(providerSettings.models)) {
+			providerSettings.models = [];
 		}
 
-		const savedModel = ollamaSettings.model?.trim();
-		if (savedModel && ollamaSettings.models.length === 0) {
-			ollamaSettings.models = [savedModel];
+		const savedModel = providerSettings.model?.trim();
+		if (savedModel && providerSettings.models.length === 0) {
+			providerSettings.models = [savedModel];
 		}
 	}
 
@@ -450,9 +450,11 @@ export default class NovaPlugin extends Plugin {
 			claude: Object.assign({}, DEFAULT_SETTINGS.aiProviders.claude, savedData?.aiProviders?.claude || {}),
 			openai: Object.assign({}, DEFAULT_SETTINGS.aiProviders.openai, savedData?.aiProviders?.openai || {}),
 			google: Object.assign({}, DEFAULT_SETTINGS.aiProviders.google, savedData?.aiProviders?.google || {}),
-			ollama: Object.assign({}, DEFAULT_SETTINGS.aiProviders.ollama, savedData?.aiProviders?.ollama || {})
+			ollama: Object.assign({}, DEFAULT_SETTINGS.aiProviders.ollama, savedData?.aiProviders?.ollama || {}),
+			'openai-compatible': Object.assign({}, DEFAULT_SETTINGS.aiProviders['openai-compatible'], savedData?.aiProviders?.['openai-compatible'] || {})
 		};
-		this.migrateOllamaModelCache();
+		this.migrateDynamicModelCache('ollama');
+		this.migrateDynamicModelCache('openai-compatible');
 		
 		// Manually merge general settings to ensure new fields get defaults
 		if (savedData?.general) {
@@ -486,6 +488,9 @@ export default class NovaPlugin extends Plugin {
 				}
 				if (this.settings.aiProviders.google?.apiKey) {
 					this.settings.aiProviders.google.apiKey = await CryptoService.decryptValue(this.settings.aiProviders.google.apiKey);
+				}
+				if (this.settings.aiProviders['openai-compatible']?.apiKey) {
+					this.settings.aiProviders['openai-compatible'].apiKey = await CryptoService.decryptValue(this.settings.aiProviders['openai-compatible'].apiKey);
 				}
 			} catch (error) {
 				Logger.error('Failed to decrypt API keys:', error);
@@ -547,6 +552,9 @@ export default class NovaPlugin extends Plugin {
 				}
 				if (settingsToSave.aiProviders.google?.apiKey) {
 					settingsToSave.aiProviders.google.apiKey = await CryptoService.encryptValue(settingsToSave.aiProviders.google.apiKey);
+				}
+				if (settingsToSave.aiProviders['openai-compatible']?.apiKey) {
+					settingsToSave.aiProviders['openai-compatible'].apiKey = await CryptoService.encryptValue(settingsToSave.aiProviders['openai-compatible'].apiKey);
 				}
 			} catch (error) {
 				Logger.error('Failed to encrypt API keys:', error);

@@ -141,7 +141,8 @@
 /* API key specific styling */
 .nova-tab-content .nova-provider-section input[type="text"],
 .nova-tab-content .nova-provider-section input[type="password"] {
-    width: 400px !important;
+    width: 100% !important;
+    max-width: 100% !important;
     font-family: var(--font-monospace) !important;
 }
 
@@ -149,6 +150,33 @@
 .nova-tab-content .nova-provider-section select {
     width: 200px !important;
     height: 40px !important;
+}
+
+.nova-tab-content .nova-provider-section select.nova-settings-model-select {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 40px !important;
+    box-sizing: border-box;
+    padding: 0 36px 0 14px;
+    background-color: var(--background-modifier-form-field);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--input-radius, var(--radius-s));
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    font-size: var(--font-ui-medium);
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.nova-tab-content .nova-provider-section select.nova-settings-model-select:hover {
+    border-color: var(--background-modifier-border-hover);
+}
+
+.nova-tab-content .nova-provider-section select.nova-settings-model-select:focus,
+.nova-tab-content .nova-provider-section select.nova-settings-model-select:focus-visible {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus, var(--interactive-accent-hover));
 }
 
 /* URL/Endpoint fields */
@@ -202,10 +230,102 @@
 
 .nova-provider-section {
     margin-top: 32px;
+    --nova-provider-label-width: 260px;
+    --nova-provider-control-width: 640px;
 }
 
 .nova-provider-section:first-child {
     margin-top: 0;
+}
+
+.nova-provider-section > .setting-item:not(.setting-item-heading) {
+    display: grid;
+    grid-template-columns: minmax(180px, var(--nova-provider-label-width)) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--size-4-4);
+    min-height: 0;
+}
+
+.nova-provider-section > .setting-item:not(.setting-item-heading) .setting-item-info {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+}
+
+.nova-provider-section > .setting-item:not(.setting-item-heading) .setting-item-control {
+    width: min(100%, var(--nova-provider-control-width));
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2-3);
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.nova-provider-section > .setting-item:not(.setting-item-heading) .setting-item-control button {
+    min-width: 0 !important;
+    min-height: 32px;
+    height: 32px;
+    padding: 4px 10px;
+    white-space: nowrap;
+}
+
+.nova-provider-section > .setting-item:not(.setting-item-heading) .setting-item-control button.nova-test-connection-button {
+    background-color: var(--interactive-accent) !important;
+    border: 1px solid var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.nova-provider-section > .setting-item:not(.setting-item-heading) .setting-item-control button.nova-test-connection-button:hover {
+    background-color: var(--interactive-accent-hover) !important;
+    border-color: var(--interactive-accent-hover) !important;
+}
+
+.nova-provider-section > .setting-item.nova-provider-full-width-setting {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.nova-provider-section > .setting-item.nova-provider-full-width-setting .setting-item-info {
+    grid-column: 1 / -1;
+    max-width: min(760px, 100%);
+}
+
+.nova-provider-section > .setting-item.nova-provider-full-width-setting .setting-item-control {
+    display: none;
+}
+
+.nova-provider-section .setting-item-description {
+    word-break: normal;
+    overflow-wrap: anywhere;
+}
+
+.nova-tab-content .nova-provider-section .nova-input-container {
+    position: relative;
+    width: min(100%, var(--nova-provider-control-width));
+    max-width: 100%;
+    padding: 0 !important;
+    background: transparent !important;
+    flex-shrink: initial;
+}
+
+.nova-tab-content .nova-provider-section .nova-input-container input.nova-api-input {
+    padding-right: 44px !important;
+}
+
+.nova-tab-content .nova-provider-section .nova-toggle-btn {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 4px !important;
+    transform: translateY(-50%);
+    background: transparent;
+    border: 0;
 }
 
 .nova-provider-status-container {
@@ -359,8 +479,8 @@
 
 /* Connection Testing */
 .nova-connection-status-container {
-    width: 150px;
-    margin-right: 8px;
+    width: 132px;
+    margin-right: 0;
     display: inline-flex;
     align-items: center;
     vertical-align: top;
@@ -370,7 +490,7 @@
 .nova-status-indicator {
     padding: 0 8px;
     border-radius: 4px;
-    font-size: 0.85em;
+    font-size: var(--font-ui-smaller);
     font-weight: 500;
     white-space: nowrap;
     height: 32px;
@@ -992,6 +1112,9 @@
 
 /* Sidebar Container */
 .nova-sidebar-container {
+    --nova-sidebar-text-size: var(--font-ui-medium);
+    --nova-sidebar-small-text-size: var(--font-ui-small);
+    --nova-sidebar-tiny-text-size: var(--font-ui-smaller);
     flex: 1;
     height: 100%;
     min-height: 0;
@@ -1064,7 +1187,7 @@
     word-wrap: break-word;
     line-height: var(--line-height-normal);
     margin-bottom: 10px; /* Reduced from 16px for better density */
-    font-size: var(--font-text-size);
+    font-size: var(--nova-sidebar-text-size, var(--font-ui-medium));
 }
 
 .nova-message-user {
@@ -1077,7 +1200,7 @@
     max-width: 80% !important;
     width: auto !important;
     display: block !important;
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
     font-weight: 400; /* Less prominent weight */
 }
 
@@ -1086,7 +1209,7 @@
     max-width: 90%; /* More screen real estate on mobile */
     padding: 8px 12px; /* Further reduced padding for density */
     line-height: 1.4; /* Compact line height for secondary text */
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
 }
 
 .nova-message-assistant {
@@ -1099,7 +1222,7 @@
     max-width: 80% !important;
     width: auto !important;
     display: block !important;
-    font-size: var(--font-text-size); /* Match document text size */
+    font-size: var(--nova-sidebar-text-size, var(--font-ui-medium));
     font-weight: 400; /* Normal weight */
 }
 
@@ -1107,11 +1230,11 @@
     max-width: 90%; /* More screen real estate on mobile */
     padding: 10px 14px; /* Reduced padding for better density */
     line-height: 1.5; /* Comfortable reading for primary content */
-    font-size: var(--font-text-size); /* Match document text size */
+    font-size: var(--nova-sidebar-text-size, var(--font-ui-medium));
 }
 
 .nova-message-role {
-    font-size: calc(var(--font-text-size) * 0.70); /* 70% of document font size */
+    font-size: var(--nova-sidebar-tiny-text-size, var(--font-ui-smaller));
     opacity: 0.5; /* More subtle */
     margin-bottom: 2px; /* Reduced margin */
     font-weight: 400; /* Less prominent weight */
@@ -1121,14 +1244,15 @@
 
 /* Mobile-specific role styling - even more subtle */
 .is-mobile .nova-message-role {
-    font-size: calc(var(--font-text-size) * 0.70); /* 70% of document font size */
+    font-size: var(--nova-sidebar-tiny-text-size, var(--font-ui-smaller));
     opacity: 0.4; /* Very subtle */
     margin-bottom: 1px; /* Minimal margin */
 }
 
 .nova-message-content {
     white-space: pre-wrap;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: anywhere;
     user-select: text;
     cursor: text;
 }
@@ -1244,7 +1368,7 @@
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    font-size: var(--font-text-size);
+    font-size: var(--font-ui-medium);
     line-height: var(--line-height-normal);
     min-height: 80px !important;
     padding: var(--size-2-2) var(--size-2-3) !important;
@@ -1749,6 +1873,16 @@
     /* Provider sections on mobile */
     .nova-provider-section {
         margin-top: 24px;
+        --nova-provider-control-width: 100%;
+    }
+
+    .nova-provider-section > .setting-item:not(.setting-item-heading) {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--size-2-3);
+    }
+
+    .nova-provider-section > .setting-item:not(.setting-item-heading) .setting-item-control {
+        width: 100%;
     }
     
     /* Buttons on mobile */
@@ -1955,6 +2089,9 @@
 /* Provider Dropdown Styles */
 .nova-provider-dropdown-container {
     position: relative;
+    flex: 0 1 280px;
+    min-width: 0;
+    max-width: min(280px, 100%);
 }
 
 
@@ -1970,14 +2107,14 @@
     gap: 4px; /* Increased gap for better spacing */
     padding: 3px 8px; /* Increased padding for better visual appearance */
     border-radius: 8px; /* Smaller radius */
-    font-size: calc(var(--font-text-size) * 0.70); /* 70% of document font size */
+    font-size: var(--nova-sidebar-tiny-text-size, var(--font-ui-smaller));
     font-weight: 400; /* Less prominent */
     transition: background-color 0.2s ease;
 }
 
 /* Mobile typography improvements */
 .is-mobile .nova-status-pill {
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
     padding: 4px 8px; /* Consistent padding with desktop */
 }
 
@@ -2004,7 +2141,7 @@
     background: var(--background-modifier-hover) !important;
     color: var(--text-muted) !important;
     text-align: center !important;
-    font-size: calc(var(--font-text-size) * 0.85) !important;
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small)) !important;
     border-radius: 12px !important;
     max-width: 70% !important;
 }
@@ -2022,7 +2159,7 @@
     color: var(--color-green) !important;
     border: 1px solid rgba(var(--color-green-rgb), 0.3) !important;
     text-align: center !important;
-    font-size: calc(var(--font-text-size) * 0.85) !important;
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small)) !important;
     border-radius: 20px !important;
     max-width: 200px !important;
     padding: 8px 12px !important;
@@ -2035,7 +2172,7 @@
     color: var(--text-muted) !important;
     border: 1px solid var(--background-modifier-border) !important;
     text-align: center !important;
-    font-size: calc(var(--font-text-size) * 0.85) !important;
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small)) !important;
     border-radius: 20px !important;
     max-width: 250px !important;
     padding: 8px 12px !important;
@@ -2047,7 +2184,7 @@
     background: rgba(var(--color-green-rgb), 0.1) !important;
     color: var(--color-green) !important;
     border: 1px solid rgba(var(--color-green-rgb), 0.3) !important;
-    font-size: var(--font-text-size) !important;
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small)) !important;
     border-radius: var(--radius-m) !important;
     max-width: 80% !important;
     padding: var(--size-4-2) var(--size-4-3) !important;
@@ -2059,7 +2196,7 @@
     background: rgba(var(--color-red-rgb), 0.1) !important;
     color: var(--color-red) !important;
     border: 1px solid rgba(var(--color-red-rgb), 0.3) !important;
-    font-size: var(--font-text-size) !important;
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small)) !important;
     border-radius: var(--radius-m) !important;
     max-width: 80% !important;
     padding: var(--size-4-2) var(--size-4-3) !important;
@@ -2071,7 +2208,7 @@
     background: rgba(var(--color-orange-rgb), 0.1) !important;
     color: var(--color-orange) !important;
     border: 1px solid rgba(var(--color-orange-rgb), 0.3) !important;
-    font-size: var(--font-text-size) !important;
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small)) !important;
     border-radius: var(--radius-m) !important;
     max-width: 80% !important;
     padding: var(--size-4-2) var(--size-4-3) !important;
@@ -2178,14 +2315,14 @@
 
 /* Document Stats Analytics Text */
 .nova-document-stats {
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
     color: var(--text-muted);
 }
 
 
 /* Token Usage Display */
 .nova-token-usage {
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
     font-weight: 500;
     color: var(--text-muted);
 }
@@ -2205,11 +2342,11 @@
 
 /* Mobile document stats to match conversation text size exactly */
 .is-mobile .nova-document-stats {
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
 }
 
 .is-mobile .nova-token-usage {
-    font-size: calc(var(--font-text-size) * 0.85); /* 85% of document font size */
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
 }
 
 
@@ -2556,7 +2693,7 @@
     margin: 0;
     margin-left: var(--size-2-3);
     color: var(--text-muted);
-    font-size: var(--font-text-size);
+    font-size: var(--nova-sidebar-text-size, var(--font-ui-medium));
     line-height: 1.4;
     text-align: left;
     align-self: flex-start;
@@ -2680,6 +2817,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: var(--size-2-3);
+    min-width: 0;
 }
 
 .nova-header-title {
@@ -2693,6 +2832,9 @@
     color: var(--interactive-accent);
     line-height: 1; /* Use tight line height for better alignment */
     min-height: 24px; /* Ensure consistent height for alignment */
+    min-width: 0;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .nova-header-title svg {
@@ -2707,6 +2849,23 @@
     align-items: center;
     gap: var(--size-2-3);
     min-height: 24px; /* Match title height for consistent alignment */
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+}
+
+.nova-sidebar-header .nova-provider-dropdown-container {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+}
+
+.nova-sidebar-header .nova-provider-dropdown-select {
+    width: 100%;
+}
+
+.nova-sidebar-header .nova-clear-button {
+    flex: 0 0 32px;
 }
 
 .nova-clear-button {
@@ -2724,8 +2883,11 @@
 }
 
 .nova-clear-button:not(.is-mobile) {
-    padding: 6px 10px; /* Increased padding for better desktop button size */
-    min-height: 28px; /* Minimum comfortable size for desktop */
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
 }
 
 .is-mobile .nova-clear-button {
@@ -2757,7 +2919,7 @@
 
 .nova-loading-text {
     color: var(--interactive-accent);
-    font-size: var(--font-text-size);
+    font-size: var(--nova-sidebar-small-text-size, var(--font-ui-small));
     font-weight: 500;
 }
 
@@ -3037,12 +3199,18 @@
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s);
     color: var(--text-normal);
-    font-size: var(--font-ui-small);
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    padding: var(--size-2-2) var(--size-2-3);
-    min-width: 150px;
-    min-height: 28px;
+    padding: 0 var(--size-2-3);
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 32px;
+    min-height: 32px;
+    line-height: 32px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     appearance: none; /* Hide native arrow */
     background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M6 9l6 6 6-6'/%3e%3c/svg%3e"); /* Dark arrow for light theme */
     background-repeat: no-repeat;
@@ -3069,13 +3237,14 @@
 }
 
 .is-mobile .nova-provider-dropdown-select {
-    min-width: 120px;
-    max-width: 160px;
-    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
     font-size: 12px;
-    padding: var(--size-2-2) var(--size-2-3);
+    padding: 0 var(--size-2-3);
     padding-right: calc(var(--size-2-3) + 16px); /* Make room for arrow on mobile */
     min-height: 32px;
+    line-height: 32px;
 }
 
 .nova-provider-dropdown-select:hover {

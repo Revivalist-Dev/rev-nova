@@ -23,12 +23,15 @@ export interface ProviderContextLimits {
 	[modelName: string]: ContextLimit;
 }
 
+export const OLLAMA_DEFAULT_CONTEXT = 32000;
+export const OPENAI_COMPATIBLE_DEFAULT_CONTEXT = 32000;
+
 /**
  * Get the provider type for a given model name by searching all providers
  */
 export function getProviderTypeForModel(modelName: string, settings?: NovaSettings): string | null {
 	// Search all provider types for this model
-	const providerTypes = ['claude', 'openai', 'google', 'ollama'];
+	const providerTypes = ['claude', 'openai', 'google', 'ollama', 'openai-compatible'];
 	
 	for (const providerType of providerTypes) {
 		const models = getAvailableModels(providerType, settings);
@@ -51,15 +54,27 @@ function addUniqueModel(models: ModelDefinition[], value: string | undefined, la
 	models.push({ value: modelValue, label: label || modelValue });
 }
 
-function getOllamaModels(settings?: NovaSettings): ModelDefinition[] {
-	const ollamaSettings = settings?.aiProviders?.ollama;
-	const cachedModels = Array.isArray(ollamaSettings?.models) ? ollamaSettings.models : [];
-	const savedModel = ollamaSettings?.model?.trim();
+function getConfiguredModels(settings: NovaSettings | undefined, providerType: 'ollama' | 'openai-compatible'): ModelDefinition[] {
+	const providerSettings = settings?.aiProviders?.[providerType];
+	const cachedModels = Array.isArray(providerSettings?.models) ? providerSettings.models : [];
+	const savedModel = providerSettings?.model?.trim();
 	const models: ModelDefinition[] = [];
 
 	for (const model of cachedModels) {
 		addUniqueModel(models, model);
 	}
+
+	if (savedModel) {
+		addUniqueModel(models, savedModel);
+	}
+
+	return models;
+}
+
+function getOpenAICompatibleConfiguredModels(settings: NovaSettings | undefined): ModelDefinition[] {
+	const providerSettings = settings?.aiProviders?.['openai-compatible'];
+	const savedModel = providerSettings?.model?.trim();
+	const models: ModelDefinition[] = [];
 
 	if (savedModel) {
 		addUniqueModel(models, savedModel);
@@ -106,7 +121,10 @@ export function getAvailableModels(providerType: string, settings?: NovaSettings
 				{ value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' }
 			];
 		case 'ollama': {
-			return getOllamaModels(settings);
+			return getConfiguredModels(settings, 'ollama');
+		}
+		case 'openai-compatible': {
+			return getOpenAICompatibleConfiguredModels(settings);
 		}
 		default:
 			return [];
@@ -156,11 +174,16 @@ const CLOUD_PROVIDER_LIMITS: Record<string, ProviderContextLimits> = {
 
 		// Fallback for Google models - assume modern Gemini capacity
 		'default': { tokens: 1000000, maxOutputTokens: 65536, fallback: true }
+	},
+
+	'openai-compatible': {
+		'default': {
+			tokens: OPENAI_COMPATIBLE_DEFAULT_CONTEXT,
+			maxOutputTokens: 4096,
+			fallback: true
+		}
 	}
 };
-
-// Default context window for Ollama when not configured by user
-export const OLLAMA_DEFAULT_CONTEXT = 32000;
 
 /**
  * Get context window limit for a specific provider and model

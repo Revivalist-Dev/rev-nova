@@ -21,12 +21,17 @@ import { DebugSettings, SupernovaLicense } from './licensing/types';
 import { VIEW_TYPE_NOVA_SIDEBAR, NovaSidebarView } from './ui/sidebar-view';
 import { ClaudeProvider } from './ai/providers/claude';
 import { OpenAIProvider } from './ai/providers/openai';
+import { OpenAICompatibleProvider, isLocalOpenAICompatibleBaseUrl } from './ai/providers/openai-compatible';
 import { GoogleProvider } from './ai/providers/google';
 import { OllamaProvider } from './ai/providers/ollama';
 import { Logger } from './utils/logger';
 import { CommandSuggestionsSettings } from './features/commands/types';
 import { TimeoutManager } from './utils/timeout-manager';
 import { CustomCommandModal } from './ui/custom-command-modal';
+import {
+	getProviderTypeForModel,
+	OPENAI_COMPATIBLE_DEFAULT_CONTEXT
+} from './ai/models';
 
 
 export interface CustomCommand {
@@ -81,7 +86,12 @@ export interface NovaSettings {
 
 type ConnectionTestResult = {
 	ollamaModelNames?: string[];
+	openAICompatibleModelNames?: string[];
+	usedCompletionFallback?: boolean;
 };
+
+type ConfigurableProvider = Exclude<ProviderType, 'none'>;
+type ProviderStatusState = 'connected' | 'error' | 'not-configured' | 'untested' | 'testing';
 
 export const DEFAULT_SETTINGS: NovaSettings = {
 	aiProviders: {
@@ -101,6 +111,14 @@ export const DEFAULT_SETTINGS: NovaSettings = {
 			models: [],
 			modelsLastRefreshed: null,
 			contextSize: 32000
+		},
+		'openai-compatible': {
+			apiKey: '',
+			baseUrl: '',
+			model: '',
+			models: [],
+			modelsLastRefreshed: null,
+			contextSize: OPENAI_COMPATIBLE_DEFAULT_CONTEXT
 		}
 	},
 	platformSettings: {
@@ -427,9 +445,11 @@ export class NovaSettingTab extends PluginSettingTab {
 						if (value) {
 							// Enable mobile with Claude as default (most reliable)
 							this.plugin.settings.platformSettings.mobile.selectedModel = '';
+							delete this.plugin.settings.platformSettings.mobile.selectedProvider;
 						} else {
 							// Disable mobile
 							this.plugin.settings.platformSettings.mobile.selectedModel = 'none';
+							this.plugin.settings.platformSettings.mobile.selectedProvider = 'none';
 						}
 						await this.plugin.saveSettings();
 						if (this.plugin.aiProviderManager) {
@@ -511,7 +531,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		});
 	}
 
-	private createProviderStatusIndicator(container: HTMLElement, provider: 'claude' | 'openai' | 'google' | 'ollama'): HTMLElement {
+	private createProviderStatusIndicator(container: HTMLElement, provider: ConfigurableProvider): HTMLElement {
 		const statusContainer = container.createDiv({ cls: 'nova-provider-status-container' });
 		
 		try {
@@ -550,7 +570,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		return statusContainer;
 	}
 
-	private getProviderStatus(provider: 'claude' | 'openai' | 'google' | 'ollama'): { state: 'connected' | 'error' | 'not-configured' | 'untested' | 'testing', message?: string, lastChecked?: Date | string | null } {
+	private getProviderStatus(provider: ConfigurableProvider): { state: ProviderStatusState, message?: string, lastChecked?: Date | string | null } {
 		try {
 			const savedStatus = this.plugin.settings.aiProviders[provider]?.status;
 			if (savedStatus) {
@@ -561,7 +581,7 @@ export class NovaSettingTab extends PluginSettingTab {
 			const hasConfig = this.hasProviderConfig(provider);
 			return {
 				state: hasConfig ? 'untested' : 'not-configured',
-				message: hasConfig ? 'Configuration not tested' : 'No API key configured',
+				message: hasConfig ? 'Configuration not tested' : this.getProviderNotConfiguredMessage(provider),
 				lastChecked: null
 			};
 		} catch (error) {
@@ -571,6 +591,18 @@ export class NovaSettingTab extends PluginSettingTab {
 				message: 'Status unavailable',
 				lastChecked: null
 			};
+		}
+	}
+
+	private getProviderNotConfiguredMessage(provider: ConfigurableProvider): string {
+		switch (provider) {
+			case 'ollama':
+			case 'openai-compatible':
+				return 'No base URL configured';
+			case 'claude':
+			case 'openai':
+			case 'google':
+				return 'No API key configured';
 		}
 	}
 
@@ -585,22 +617,24 @@ export class NovaSettingTab extends PluginSettingTab {
 		}
 	}
 
-	private createTestConnectionButton(container: HTMLElement, provider: 'claude' | 'openai' | 'google' | 'ollama'): void {
+	private createTestConnectionButton(container: HTMLElement, provider: ConfigurableProvider): void {
 		const isOllama = provider === 'ollama';
+		const refreshesModels = isOllama || provider === 'openai-compatible';
 		const setting = new Setting(container)
 			.setName('Connection status')
-			.setDesc(isOllama ? 'Test Ollama and refresh the model picker' : 'Test your API connection');
+			.setDesc(refreshesModels ? `Test ${this.getProviderDisplayName(provider)} and refresh the model picker` : 'Test your API connection');
 
 		// Create status indicator first (to the left)
 		const statusContainer = setting.controlEl.createDiv({ cls: 'nova-connection-status-container' });
 		
 		setting.addButton(button => {
-			button.setButtonText(isOllama ? 'Test connection and refresh models' : 'Test connection')
-				.setTooltip(isOllama ? 'Test Ollama connection and refresh local models' : `Test ${provider} connection`)
+			button.setButtonText(refreshesModels ? 'Test and refresh' : 'Test connection')
+				.setTooltip(refreshesModels ? `Test ${this.getProviderDisplayName(provider)} connection and refresh models` : `Test ${this.getProviderDisplayName(provider)} connection`)
 				.onClick(async () => {
 					await this.testProviderConnection(provider, button.buttonEl, statusContainer);
 				});
 			button.buttonEl.setAttribute('aria-label', `Test ${this.getProviderDisplayName(provider)} connection`);
+			button.buttonEl.addClass('nova-test-connection-button');
 			return button;
 		});
 		
@@ -608,7 +642,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		this.updateConnectionStatus(statusContainer, provider);
 	}
 
-	private async testProviderConnection(provider: 'claude' | 'openai' | 'google' | 'ollama', buttonEl: HTMLElement, statusContainer: HTMLElement): Promise<void> {
+	private async testProviderConnection(provider: ConfigurableProvider, buttonEl: HTMLElement, statusContainer: HTMLElement): Promise<void> {
 		const originalText = buttonEl.textContent || 'Test Connection';
 		const button = buttonEl as HTMLButtonElement;
 		let shouldRefreshSettingsContent = false;
@@ -650,14 +684,20 @@ export class NovaSettingTab extends PluginSettingTab {
 			const testPromise = this.performRealConnectionTest(provider);
 			
 			const testResult = await Promise.race([testPromise, timeoutPromise]);
-			const successMessage = provider === 'ollama'
-				? this.updateOllamaModelCache(testResult.ollamaModelNames || [])
-				: 'Connected successfully';
+			let successMessage = 'Connected successfully';
+			if (provider === 'ollama') {
+				successMessage = this.updateOllamaModelCache(testResult.ollamaModelNames || []);
+			} else if (provider === 'openai-compatible') {
+				successMessage = this.updateOpenAICompatibleModelCache(
+					testResult.openAICompatibleModelNames || [],
+					!!testResult.usedCompletionFallback
+				);
+			}
 			
 			// Update provider status to connected
 			await this.updateProviderStatus(provider, 'connected', successMessage);
 			this.setConnectionStatus(statusContainer, 'success', 'Connected');
-			shouldRefreshSettingsContent = provider === 'ollama';
+			shouldRefreshSettingsContent = provider === 'ollama' || provider === 'openai-compatible';
 			
 			// Emit event to notify sidebar of provider configuration
 			document.dispatchEvent(new CustomEvent('nova-provider-configured', { 
@@ -676,6 +716,15 @@ export class NovaSettingTab extends PluginSettingTab {
 				const ollamaUrl = this.plugin.settings.aiProviders.ollama.baseUrl;
 				if (!ollamaUrl || ollamaUrl.trim() === '') {
 					errorMessage = 'No URL configured';
+				} else {
+					errorMessage = 'Connection failed';
+				}
+			} else if (provider === 'openai-compatible') {
+				const compatibleSettings = this.plugin.settings.aiProviders['openai-compatible'];
+				if (!compatibleSettings.baseUrl || compatibleSettings.baseUrl.trim() === '') {
+					errorMessage = 'No URL configured';
+				} else if (err.message?.includes('model')) {
+					errorMessage = 'Model required';
 				} else {
 					errorMessage = 'Connection failed';
 				}
@@ -709,7 +758,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		}
 	}
 
-	private async updateProviderStatus(provider: 'claude' | 'openai' | 'google' | 'ollama', status: 'connected' | 'error' | 'not-configured' | 'untested' | 'testing', message?: string): Promise<void> {
+	private async updateProviderStatus(provider: ConfigurableProvider, status: ProviderStatusState, message?: string): Promise<void> {
 		if (!this.plugin.settings.aiProviders[provider].status) {
 			this.plugin.settings.aiProviders[provider].status = {
 				state: status,
@@ -734,14 +783,14 @@ export class NovaSettingTab extends PluginSettingTab {
 		// Find all provider status containers and update them
 		const containers = this.containerEl.querySelectorAll('.nova-provider-status-container');
 		containers.forEach(container => {
-			const provider = container.getAttribute('data-provider') as 'claude' | 'openai' | 'google' | 'ollama';
+			const provider = container.getAttribute('data-provider') as ConfigurableProvider;
 			if (provider) {
 				this.updateProviderStatusDisplay(container as HTMLElement, provider);
 			}
 		});
 	}
 
-	private updateProviderStatusDisplay(container: HTMLElement, provider: 'claude' | 'openai' | 'google' | 'ollama'): void {
+	private updateProviderStatusDisplay(container: HTMLElement, provider: ConfigurableProvider): void {
 		const status = this.getProviderStatus(provider);
 		const statusEl = container.querySelector('.nova-provider-status');
 		
@@ -775,7 +824,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		}
 	}
 
-	private async performRealConnectionTest(provider: 'claude' | 'openai' | 'google' | 'ollama'): Promise<ConnectionTestResult> {
+	private async performRealConnectionTest(provider: ConfigurableProvider): Promise<ConnectionTestResult> {
 		// Test the provider classes directly
 		const tempTimeoutManager = new TimeoutManager();
 		switch (provider) {
@@ -798,6 +847,25 @@ export class NovaSettingTab extends PluginSettingTab {
 			case 'ollama': {
 				const ollamaProvider = new OllamaProvider(this.plugin.settings.aiProviders.ollama, this.plugin.settings.general, tempTimeoutManager);
 				return { ollamaModelNames: await ollamaProvider.getAvailableModels() };
+			}
+			case 'openai-compatible': {
+				const compatibleProvider = new OpenAICompatibleProvider(this.plugin.settings.aiProviders['openai-compatible'], this.plugin.settings.general, tempTimeoutManager);
+				try {
+					return { openAICompatibleModelNames: await compatibleProvider.getAvailableModels() };
+				} catch (modelsError) {
+					const savedModel = this.plugin.settings.aiProviders['openai-compatible'].model?.trim();
+					if (!savedModel) {
+						throw modelsError;
+					}
+					await compatibleProvider.chatCompletion([{ role: 'user', content: 'Reply with OK.' }], {
+						maxTokens: 4,
+						temperature: 0
+					});
+					return {
+						openAICompatibleModelNames: [],
+						usedCompletionFallback: true
+					};
+				}
 			}
 		}
 	}
@@ -853,6 +921,141 @@ export class NovaSettingTab extends PluginSettingTab {
 		return parts.join(' ');
 	}
 
+	private updateOpenAICompatibleModelCache(modelNames: string[], usedCompletionFallback: boolean): string {
+		const compatibleSettings = this.plugin.settings.aiProviders['openai-compatible'];
+		const uniqueModels = Array.from(new Set(modelNames.map(model => model.trim()).filter(Boolean)))
+			.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+		const savedModel = compatibleSettings.model?.trim();
+
+		compatibleSettings.models = uniqueModels;
+		compatibleSettings.modelsLastRefreshed = new Date().toISOString();
+
+		if (usedCompletionFallback) {
+			return 'Connected with saved model. Model list unavailable.';
+		}
+
+		const modelCount = uniqueModels.length;
+		const modelText = modelCount === 1 ? '1 compatible model found' : `${modelCount} compatible models found`;
+
+		if (modelCount === 0) {
+			return savedModel
+				? 'Connected. No compatible models found. Saved model kept.'
+				: 'Connected. No compatible models found.';
+		}
+
+		if (savedModel && !uniqueModels.includes(savedModel)) {
+			compatibleSettings.model = '';
+			this.syncOpenAICompatiblePlatformSelection('', savedModel);
+			return `Connected. ${modelText}. Select a model from the dropdown.`;
+		}
+
+		return savedModel
+			? `Connected. ${modelText}.`
+			: `Connected. ${modelText}. Select a model from the dropdown.`;
+	}
+
+	private getOpenAICompatibleModelListDescription(): string {
+		const compatibleSettings = this.plugin.settings.aiProviders['openai-compatible'];
+		const cachedModels = Array.isArray(compatibleSettings.models)
+			? Array.from(new Set(compatibleSettings.models.map(model => model.trim()).filter(Boolean)))
+			: [];
+		const savedModel = compatibleSettings.model?.trim();
+		const parts = [
+			'Nova refreshes the compatible model list when you test the connection. When /models is available, select a model above; the sidebar shows only the selected model. If the endpoint does not support /models, enter a model ID and test again to validate it with a tiny chat completion.'
+		];
+
+		if (cachedModels.length > 0) {
+			const modelText = cachedModels.length === 1 ? '1 cached compatible model' : `${cachedModels.length} cached compatible models`;
+			parts.push(`${modelText} available in the model dropdown above.`);
+		}
+
+		if (compatibleSettings.modelsLastRefreshed) {
+			const refreshedAt = new Date(compatibleSettings.modelsLastRefreshed);
+			parts.push(`Last refreshed: ${refreshedAt.toLocaleString()}.`);
+
+			if (savedModel && !cachedModels.includes(savedModel)) {
+				parts.push(`Saved model ${savedModel} is not in the refreshed model list, but remains available until you choose another model.`);
+			}
+		}
+
+		return parts.join(' ');
+	}
+
+	private getSortedOpenAICompatibleModels(): string[] {
+		const compatibleSettings = this.plugin.settings.aiProviders['openai-compatible'];
+		return Array.from(new Set((compatibleSettings.models || []).map(model => model.trim()).filter(Boolean)))
+			.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+	}
+
+	private syncOpenAICompatiblePlatformSelection(model: string, previousModel?: string): void {
+		const platform = Platform.isMobile ? 'mobile' : 'desktop';
+		const platformSettings = this.plugin.settings.platformSettings[platform];
+		const wasCurrentCompatible = platformSettings.selectedProvider === 'openai-compatible'
+			|| (!!previousModel && platformSettings.selectedModel === previousModel);
+
+		if (!wasCurrentCompatible) {
+			return;
+		}
+
+		platformSettings.selectedModel = model;
+		platformSettings.selectedProvider = model ? 'openai-compatible' : 'none';
+	}
+
+	private notifyOpenAICompatibleModelChanged(): void {
+		if (this.plugin.aiProviderManager) {
+			this.plugin.aiProviderManager.updateSettings(this.plugin.settings);
+		}
+
+		document.dispatchEvent(new CustomEvent('nova-provider-configured', {
+			detail: { provider: 'openai-compatible', status: 'configured' }
+		}));
+	}
+
+	private createOpenAICompatibleModelSetting(container: HTMLElement): void {
+		const compatibleSettings = this.plugin.settings.aiProviders['openai-compatible'];
+		const cachedModels = this.getSortedOpenAICompatibleModels();
+
+		if (cachedModels.length > 0) {
+			new Setting(container)
+				.setName('Model')
+				.setDesc('Select a model discovered from /models. Test connection to refresh this list.')
+				.addDropdown(dropdown => {
+					dropdown.selectEl.classList.add('nova-settings-model-select');
+					dropdown.addOption('', 'Select a model');
+					for (const model of cachedModels) {
+						dropdown.addOption(model, model);
+					}
+					return dropdown
+						.setValue(cachedModels.includes(compatibleSettings.model || '') ? compatibleSettings.model || '' : '')
+						.onChange(async (value) => {
+							const previousModel = compatibleSettings.model;
+							compatibleSettings.model = value;
+							this.syncOpenAICompatiblePlatformSelection(value, previousModel);
+							await this.plugin.saveSettings();
+							this.notifyOpenAICompatibleModelChanged();
+						});
+				});
+			return;
+		}
+
+		new Setting(container)
+			.setName('Model')
+			.setDesc('Exact model ID to send to the endpoint. Required when /models is unavailable.')
+			.addText(text => {
+				text.inputEl.addClass('nova-api-input-medium');
+				return text
+					.setPlaceholder('Model name')
+					.setValue(compatibleSettings.model || '')
+					.onChange(async (value) => {
+						const previousModel = compatibleSettings.model;
+						compatibleSettings.model = value;
+						this.syncOpenAICompatiblePlatformSelection(value, previousModel);
+						await this.plugin.saveSettings();
+						this.notifyOpenAICompatibleModelChanged();
+					});
+			});
+	}
+
 	private setConnectionStatus(container: HTMLElement, type: 'success' | 'error' | 'testing' | 'none', message: string): void {
 		container.empty();
 		
@@ -862,7 +1065,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		statusEl.setText(message);
 	}
 
-	private updateConnectionStatus(container: HTMLElement, provider: 'claude' | 'openai' | 'google' | 'ollama'): void {
+	private updateConnectionStatus(container: HTMLElement, provider: ConfigurableProvider): void {
 		// Check if provider has required configuration
 		const hasConfig = this.hasProviderConfig(provider);
 		
@@ -881,7 +1084,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		this.setConnectionStatus(container, 'none', '');
 	}
 
-	private hasProviderConfig(provider: 'claude' | 'openai' | 'google' | 'ollama'): boolean {
+	private hasProviderConfig(provider: ConfigurableProvider): boolean {
 		switch (provider) {
 			case 'claude': 
 				return !!this.plugin.settings.aiProviders.claude.apiKey;
@@ -891,6 +1094,8 @@ export class NovaSettingTab extends PluginSettingTab {
 				return !!this.plugin.settings.aiProviders.google.apiKey;
 			case 'ollama': 
 				return !!this.plugin.settings.aiProviders.ollama.baseUrl;
+			case 'openai-compatible':
+				return !!this.plugin.settings.aiProviders['openai-compatible'].baseUrl;
 			default: 
 				return false;
 		}
@@ -1500,7 +1705,8 @@ export class NovaSettingTab extends PluginSettingTab {
 			{ model: 'Claude Sonnet 4', desc: ' - Latest generation with excellent instruction following for collaborative editing' },
 			{ model: 'GPT-5 Mini', desc: ' - Cost-effective model with strong performance across coding and general tasks' },
 			{ model: 'Gemini 2.5 Flash', desc: ' - Best price/performance with "thinking" capabilities and strong coding support' },
-			{ model: 'Ollama (Local)', desc: ' - Complete privacy with local processing - requires setup but keeps all data on your device' }
+			{ model: 'Ollama (local Ollama API)', desc: ' - Complete privacy with Ollama local processing - requires setup but keeps all data on your device' },
+			{ model: 'OpenAI-compatible (LM Studio and others)', desc: ' - Use LM Studio, LocalAI, OpenRouter, LiteLLM, and other Chat Completions endpoints' }
 		];
 		
 		recommendations.forEach(rec => {
@@ -1519,6 +1725,7 @@ export class NovaSettingTab extends PluginSettingTab {
 
 		// Show all providers - no restrictions
 		this.createOllamaSettings(configSection);
+		this.createOpenAICompatibleSettings(configSection);
 		this.createClaudeSettings(configSection);
 		this.createGoogleSettings(configSection);
 		this.createOpenAISettings(configSection);
@@ -1580,6 +1787,78 @@ export class NovaSettingTab extends PluginSettingTab {
 
 	}
 
+	private createOpenAICompatibleSettings(containerEl = this.containerEl) {
+		const compatibleSettings = this.plugin.settings.aiProviders['openai-compatible'];
+		const compatibleContainer = containerEl.createDiv({ cls: 'nova-provider-section' });
+
+		const headerSetting = new Setting(compatibleContainer)
+			.setName('OpenAI-compatible endpoints')
+			.setHeading();
+		const statusContainer = this.createProviderStatusIndicator(headerSetting.controlEl, 'openai-compatible');
+		statusContainer.setAttribute('data-provider', 'openai-compatible');
+
+		new Setting(compatibleContainer)
+			.setName('Base URL')
+			.setDesc('API root such as http://localhost:1234/v1 or https://openrouter.ai/api/v1. Nova appends /models and /chat/completions.')
+			.addText(text => {
+				text.inputEl.addClass('nova-api-input-medium');
+				return text
+					.setPlaceholder('https://example.com/v1')
+					.setValue(compatibleSettings.baseUrl || '')
+					.onChange(async (value) => {
+						compatibleSettings.baseUrl = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		this.createSecureApiKeyInput(compatibleContainer, {
+			name: 'API key (optional)',
+			desc: 'Bearer token for endpoints that require authentication',
+			placeholder: 'sk-...',
+			value: compatibleSettings.apiKey || '',
+			onChange: async (value) => {
+				compatibleSettings.apiKey = value;
+				await this.plugin.saveSettings();
+			}
+		});
+
+		this.createOpenAICompatibleModelSetting(compatibleContainer);
+
+		this.createTestConnectionButton(compatibleContainer, 'openai-compatible');
+
+		const compatibleModelsSetting = new Setting(compatibleContainer)
+			.setName('Compatible models')
+			.setDesc(this.getOpenAICompatibleModelListDescription());
+		compatibleModelsSetting.settingEl.addClass('nova-provider-full-width-setting');
+
+		new Setting(compatibleContainer)
+			.setName('Default context limit')
+			.setDesc('Context window size for compatible models when Nova cannot know the provider limit')
+			.addText(text => {
+				text.inputEl.type = 'number';
+				text.inputEl.addClass('nova-api-input-tiny');
+				return text
+					.setPlaceholder(String(OPENAI_COMPATIBLE_DEFAULT_CONTEXT))
+					.setValue((compatibleSettings.contextSize || OPENAI_COMPATIBLE_DEFAULT_CONTEXT).toString())
+					.onChange(async (value) => {
+						const numValue = parseInt(value);
+						if (!isNaN(numValue) && numValue > 0) {
+							compatibleSettings.contextSize = numValue;
+							await this.plugin.saveSettings();
+
+							document.dispatchEvent(new CustomEvent('nova-provider-configured', {
+								detail: { provider: 'openai-compatible', status: 'connected' }
+							}));
+						}
+					});
+			});
+
+		const mobileAvailabilitySetting = new Setting(compatibleContainer)
+			.setName('Mobile availability')
+			.setDesc('Cloud endpoints work on mobile. Localhost, private network, .local, and single-hostname URLs are desktop-only.');
+		mobileAvailabilitySetting.settingEl.addClass('nova-provider-full-width-setting');
+	}
+
 
 	private createGoogleSettings(containerEl = this.containerEl) {
 
@@ -1614,14 +1893,14 @@ export class NovaSettingTab extends PluginSettingTab {
 
 		// Provider header with status indicator
 		const headerSetting = new Setting(ollamaContainer)
-			.setName('Ollama (local)')
+			.setName('Ollama local API')
 			.setHeading();
 		const statusContainer = this.createProviderStatusIndicator(headerSetting.controlEl, 'ollama');
 		statusContainer.setAttribute('data-provider', 'ollama');
 
 		new Setting(ollamaContainer)
 			.setName('Base URL')
-			.setDesc('Ollama server URL')
+			.setDesc('Ollama API server URL')
 			.addText(text => {
 				text.inputEl.addClass('nova-api-input-medium');
 				return text
@@ -1636,9 +1915,10 @@ export class NovaSettingTab extends PluginSettingTab {
 		// Test Connection button
 		this.createTestConnectionButton(ollamaContainer, 'ollama');
 
-		new Setting(ollamaContainer)
+		const localModelsSetting = new Setting(ollamaContainer)
 			.setName('Local models')
 			.setDesc(this.getOllamaModelListDescription());
+		localModelsSetting.settingEl.addClass('nova-provider-full-width-setting');
 
 		new Setting(ollamaContainer)
 			.setName('Default context limit')
@@ -1686,9 +1966,13 @@ export class NovaSettingTab extends PluginSettingTab {
 
 	private getAllowedProvidersForPlatform(platform: 'desktop' | 'mobile'): ProviderType[] {
 		// All providers are available to all users in the Supernova model
-		return platform === 'desktop' 
-			? ['claude', 'openai', 'google', 'ollama']
-			: ['claude', 'openai', 'google'];
+		if (platform === 'desktop') {
+			return ['claude', 'openai', 'google', 'openai-compatible', 'ollama'];
+		}
+
+		return isLocalOpenAICompatibleBaseUrl(this.plugin.settings.aiProviders['openai-compatible']?.baseUrl)
+			? ['claude', 'openai', 'google']
+			: ['claude', 'openai', 'google', 'openai-compatible'];
 	}
 
 	private getProviderDisplayName(provider: ProviderType): string {
@@ -1696,15 +1980,17 @@ export class NovaSettingTab extends PluginSettingTab {
 			'claude': 'Claude (Anthropic)',
 			'openai': 'ChatGPT (OpenAI)',
 			'google': 'Google (Gemini)', 
-			'ollama': 'Ollama (Local)',
+			'ollama': 'Ollama (local Ollama API)',
+			'openai-compatible': 'OpenAI-compatible (LM Studio and others)',
 			'none': 'None (Disabled)'
 		};
 		return names[provider] || provider;
 	}
 
-	setCurrentModel(modelId: string): void {
+	setCurrentModel(modelId: string, provider?: ProviderType): void {
 		const platform = Platform.isMobile ? 'mobile' : 'desktop';
 		this.plugin.settings.platformSettings[platform].selectedModel = modelId;
+		this.plugin.settings.platformSettings[platform].selectedProvider = provider ?? (getProviderTypeForModel(modelId, this.plugin.settings) as ProviderType | null) ?? undefined;
 
 		// Update the provider manager with new settings
 		if (this.plugin.aiProviderManager) {
@@ -1937,7 +2223,8 @@ export class NovaSettingTab extends PluginSettingTab {
 			{ name: 'Claude', desc: ' - For complex reasoning and analysis' },
 			{ name: 'OpenAI', desc: ' - For balanced performance and creativity' },
 			{ name: 'Gemini', desc: ' - For fast responses and research' },
-			{ name: 'Ollama', desc: ' - For local privacy and offline use 🔒' }
+			{ name: 'Ollama', desc: ' - For the local Ollama API and offline use 🔒' },
+			{ name: 'OpenAI-compatible', desc: ' - For LM Studio, LocalAI, OpenRouter, and custom endpoints' }
 		];
 		providers.forEach(provider => {
 			const li = providerList.createEl('li');
