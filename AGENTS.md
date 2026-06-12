@@ -72,12 +72,15 @@ Use the existing Claude Code project intelligence as the canonical source of rep
   for new behavior and bug fixes; prefer fast, deterministic tests.
 - Mocks: Obsidian API is mapped to `test/mocks/obsidian-mock.ts`.
 
-### Commit & Pull Request Guidelines
+### Commit & Maintainer Pull Request Guidelines
 - Commits: Clear, imperative subject; reference issues (e.g., `fix: preserve
   context on provider switch (#123)`). Keep changes focused.
-- PRs: Describe intent and behavior; link issues; include screenshots/gifs for
-  UI changes; update docs (`README.md`/guide) as needed; ensure `lint` and
-  `test` pass. First-time contributors must sign the CLA.
+- Maintainer PRs: Describe intent and behavior; link issues; include
+  screenshots/gifs for UI changes; update docs (`README.md`/guide) as needed;
+  ensure `lint` and `test` pass.
+- External code contributions, documentation patches, and unsolicited PRs are
+  not accepted. Do not ask users to open PRs or sign CLAs; direct them to
+  `CONTRIBUTING.md` for the feedback-only policy.
 
 ### Security & Configuration
 - Privacy-first: Do not send data without explicit user consent.
