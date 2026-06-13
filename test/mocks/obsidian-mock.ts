@@ -715,6 +715,7 @@ export class Setting {
     
     addDropdown(callback: (dropdown: any) => void): this {
         const selectEl = document.createElement('select');
+        this.controlEl.appendChild(selectEl);
         callback({
             selectEl: selectEl,
             addOption: function(value: string, display: string) {

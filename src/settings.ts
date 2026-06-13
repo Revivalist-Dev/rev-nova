@@ -990,6 +990,13 @@ export class NovaSettingTab extends PluginSettingTab {
 	private syncOpenAICompatiblePlatformSelection(model: string, previousModel?: string): void {
 		const platform = Platform.isMobile ? 'mobile' : 'desktop';
 		const platformSettings = this.plugin.settings.platformSettings[platform];
+
+		if (model) {
+			platformSettings.selectedModel = model;
+			platformSettings.selectedProvider = 'openai-compatible';
+			return;
+		}
+
 		const wasCurrentCompatible = platformSettings.selectedProvider === 'openai-compatible'
 			|| (!!previousModel && platformSettings.selectedModel === previousModel);
 
