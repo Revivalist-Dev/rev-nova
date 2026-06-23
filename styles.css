@@ -1226,6 +1226,47 @@
     font-weight: 400; /* Normal weight */
 }
 
+/* Thinking dropdown - collapsible reasoning step above AI responses */
+.nova-thinking-details {
+    margin-bottom: var(--size-4-2);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background-color: var(--background-secondary);
+    overflow: hidden;
+}
+
+.nova-thinking-summary {
+    padding: var(--size-4-1) var(--size-4-2);
+    cursor: pointer;
+    user-select: none;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+    transition: background-color 0.15s ease;
+}
+
+.nova-thinking-summary:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.nova-thinking-label {
+    font-weight: 500;
+}
+
+.nova-thinking-content {
+    padding: var(--size-4-2) var(--size-4-3);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-top: 1px solid var(--background-modifier-border);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
 .is-mobile .nova-message-assistant {
     max-width: 90%; /* More screen real estate on mobile */
     padding: 10px 14px; /* Reduced padding for better density */

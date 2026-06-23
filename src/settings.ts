@@ -23,6 +23,7 @@ import { ClaudeProvider } from './ai/providers/claude';
 import { OpenAIProvider } from './ai/providers/openai';
 import { OpenAICompatibleProvider, isLocalOpenAICompatibleBaseUrl } from './ai/providers/openai-compatible';
 import { GoogleProvider } from './ai/providers/google';
+import { DeepSeekProvider } from './ai/providers/deepseek';
 import { OllamaProvider } from './ai/providers/ollama';
 import { Logger } from './utils/logger';
 import { CommandSuggestionsSettings } from './features/commands/types';
@@ -104,6 +105,10 @@ export const DEFAULT_SETTINGS: NovaSettings = {
 		},
 		google: {
 			apiKey: ''
+		},
+		deepseek: {
+			apiKey: '',
+			baseUrl: 'https://api.deepseek.com'
 		},
 		ollama: {
 			baseUrl: 'http://localhost:11434',
@@ -602,6 +607,7 @@ export class NovaSettingTab extends PluginSettingTab {
 			case 'claude':
 			case 'openai':
 			case 'google':
+			case 'deepseek':
 				return 'No API key configured';
 		}
 	}
@@ -842,6 +848,11 @@ export class NovaSettingTab extends PluginSettingTab {
 			case 'google': {
 				const googleProvider = new GoogleProvider(this.plugin.settings.aiProviders.google, this.plugin.settings.general, tempTimeoutManager);
 				await googleProvider.getAvailableModels();
+				return {};
+			}
+			case 'deepseek': {
+				const deepseekProvider = new DeepSeekProvider(this.plugin.settings.aiProviders.deepseek, this.plugin.settings.general, tempTimeoutManager);
+				await deepseekProvider.getAvailableModels();
 				return {};
 			}
 			case 'ollama': {
@@ -1093,17 +1104,19 @@ export class NovaSettingTab extends PluginSettingTab {
 
 	private hasProviderConfig(provider: ConfigurableProvider): boolean {
 		switch (provider) {
-			case 'claude': 
+			case 'claude':
 				return !!this.plugin.settings.aiProviders.claude.apiKey;
-			case 'openai': 
+			case 'openai':
 				return !!this.plugin.settings.aiProviders.openai.apiKey;
-			case 'google': 
+			case 'google':
 				return !!this.plugin.settings.aiProviders.google.apiKey;
-			case 'ollama': 
+			case 'deepseek':
+				return !!this.plugin.settings.aiProviders.deepseek.apiKey;
+			case 'ollama':
 				return !!this.plugin.settings.aiProviders.ollama.baseUrl;
 			case 'openai-compatible':
 				return !!this.plugin.settings.aiProviders['openai-compatible'].baseUrl;
-			default: 
+			default:
 				return false;
 		}
 	}
@@ -1735,6 +1748,7 @@ export class NovaSettingTab extends PluginSettingTab {
 		this.createOpenAICompatibleSettings(configSection);
 		this.createClaudeSettings(configSection);
 		this.createGoogleSettings(configSection);
+		this.createDeepSeekSettings(configSection);
 		this.createOpenAISettings(configSection);
 	}
 
@@ -1895,6 +1909,33 @@ export class NovaSettingTab extends PluginSettingTab {
 	}
 
 
+	private createDeepSeekSettings(containerEl = this.containerEl) {
+
+		const deepseekContainer = containerEl.createDiv({ cls: 'nova-provider-section' });
+
+		// Provider header with status indicator
+		const headerSetting = new Setting(deepseekContainer)
+			.setName('DeepSeek')
+			.setHeading();
+		const statusContainer = this.createProviderStatusIndicator(headerSetting.controlEl, 'deepseek');
+		statusContainer.setAttribute('data-provider', 'deepseek');
+
+		this.createSecureApiKeyInput(deepseekContainer, {
+			name: 'API Key',
+			desc: 'Your DeepSeek API key',
+			placeholder: 'sk-...',
+			value: this.plugin.settings.aiProviders.deepseek.apiKey || '',
+			onChange: async (value) => {
+				this.plugin.settings.aiProviders.deepseek.apiKey = value;
+				await this.plugin.saveSettings();
+			}
+		});
+
+		// Test Connection button
+		this.createTestConnectionButton(deepseekContainer, 'deepseek');
+
+	}
+
 	private createOllamaSettings(containerEl = this.containerEl) {
 		const ollamaContainer = containerEl.createDiv({ cls: 'nova-provider-section' });
 
@@ -1974,19 +2015,20 @@ export class NovaSettingTab extends PluginSettingTab {
 	private getAllowedProvidersForPlatform(platform: 'desktop' | 'mobile'): ProviderType[] {
 		// All providers are available to all users in the Supernova model
 		if (platform === 'desktop') {
-			return ['claude', 'openai', 'google', 'openai-compatible', 'ollama'];
+			return ['claude', 'openai', 'google', 'deepseek', 'openai-compatible', 'ollama'];
 		}
 
 		return isLocalOpenAICompatibleBaseUrl(this.plugin.settings.aiProviders['openai-compatible']?.baseUrl)
-			? ['claude', 'openai', 'google']
-			: ['claude', 'openai', 'google', 'openai-compatible'];
+			? ['claude', 'openai', 'google', 'deepseek']
+			: ['claude', 'openai', 'google', 'deepseek', 'openai-compatible'];
 	}
 
 	private getProviderDisplayName(provider: ProviderType): string {
 		const names: Record<ProviderType, string> = {
 			'claude': 'Claude (Anthropic)',
 			'openai': 'ChatGPT (OpenAI)',
-			'google': 'Google (Gemini)', 
+			'google': 'Google (Gemini)',
+			'deepseek': 'DeepSeek',
 			'ollama': 'Ollama (local Ollama API)',
 			'openai-compatible': 'OpenAI-compatible (LM Studio and others)',
 			'none': 'None (Disabled)'

@@ -31,7 +31,7 @@ export const OPENAI_COMPATIBLE_DEFAULT_CONTEXT = 32000;
  */
 export function getProviderTypeForModel(modelName: string, settings?: NovaSettings): string | null {
 	// Search all provider types for this model
-	const providerTypes = ['claude', 'openai', 'google', 'ollama', 'openai-compatible'];
+	const providerTypes = ['claude', 'openai', 'google', 'deepseek', 'ollama', 'openai-compatible'];
 	
 	for (const providerType of providerTypes) {
 		const models = getAvailableModels(providerType, settings);
@@ -120,6 +120,13 @@ export function getAvailableModels(providerType: string, settings?: NovaSettings
 				{ value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
 				{ value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' }
 			];
+		case 'deepseek':
+			return [
+				{ value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+				{ value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+				{ value: 'deepseek-chat', label: 'DeepSeek Chat (deprecated)' },
+				{ value: 'deepseek-reasoner', label: 'DeepSeek Reasoner (deprecated)' }
+			];
 		case 'ollama': {
 			return getConfiguredModels(settings, 'ollama');
 		}
@@ -174,6 +181,17 @@ const CLOUD_PROVIDER_LIMITS: Record<string, ProviderContextLimits> = {
 
 		// Fallback for Google models - assume modern Gemini capacity
 		'default': { tokens: 1000000, maxOutputTokens: 65536, fallback: true }
+	},
+
+	deepseek: {
+		// DeepSeek models - 1M context, 384K max output
+		'deepseek-v4-pro': { tokens: 1000000, maxOutputTokens: 384000 },
+		'deepseek-v4-flash': { tokens: 1000000, maxOutputTokens: 384000 },
+		'deepseek-chat': { tokens: 1000000, maxOutputTokens: 384000 },
+		'deepseek-reasoner': { tokens: 1000000, maxOutputTokens: 384000 },
+
+		// Fallback for DeepSeek models
+		'default': { tokens: 1000000, maxOutputTokens: 384000, fallback: true }
 	},
 
 	'openai-compatible': {

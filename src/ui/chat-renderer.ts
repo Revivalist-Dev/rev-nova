@@ -32,21 +32,39 @@ export class ChatRenderer {
 
 	/**
 	 * Add a chat message with role header
+	 * @param thinkingContent - Optional thinking/reasoning content to display in a collapsible dropdown above the message
 	 */
-	addMessage(role: 'user' | 'assistant' | 'system', content: string): void {
+	addMessage(role: 'user' | 'assistant' | 'system', content: string, thinkingContent?: string): void {
 		
 		const messageEl = this.chatContainer.createDiv({ cls: `nova-message nova-message-${role}` });
 
-		messageEl.createEl('div', { 
+		messageEl.createEl('div', {
 			text: role === 'user' ? 'You' : role === 'system' ? 'System' : 'Nova',
 			cls: 'nova-message-role'
 		});
+
+		// Render thinking dropdown if thinking content is present (only for assistant messages)
+		if (thinkingContent && role === 'assistant') {
+			this.renderThinkingDropdown(messageEl, thinkingContent);
+		}
 
 		const contentEl = messageEl.createEl('div', { cls: 'nova-message-content' });
 		// Safe rendering using DOM API
 		this.renderMessageContent(contentEl, content);
 
 		this.scrollToBottom(true);
+	}
+
+	/**
+	 * Render a collapsible thinking/reasoning dropdown above the AI response
+	 */
+	private renderThinkingDropdown(messageEl: HTMLElement, thinkingContent: string): void {
+		const detailsEl = messageEl.createEl('details', { cls: 'nova-thinking-details' });
+		const summaryEl = detailsEl.createEl('summary', { cls: 'nova-thinking-summary' });
+		summaryEl.createSpan({ text: '💭 Thinking', cls: 'nova-thinking-label' });
+		
+		const thinkingContentEl = detailsEl.createEl('div', { cls: 'nova-thinking-content' });
+		thinkingContentEl.textContent = thinkingContent;
 	}
 
 	/**
@@ -208,16 +226,16 @@ export class ChatRenderer {
 		for (const message of messages) {
 			if (message.role === 'system' && message.metadata?.messageType) {
 				// Restore system message with original styling
-				const messageEl = this.chatContainer.createDiv({ 
-					cls: `nova-message ${message.metadata.messageType}` 
+				const messageEl = this.chatContainer.createDiv({
+					cls: `nova-message ${message.metadata.messageType}`
 				});
 				const contentEl = messageEl.createEl('div', { cls: 'nova-message-content' });
 				
 				// Safe rendering using DOM API
 				this.renderMessageContent(contentEl, message.content);
 			} else {
-				// Regular user/assistant messages
-				this.addMessage(message.role, message.content);
+				// Regular user/assistant messages - pass thinking content if present
+				this.addMessage(message.role, message.content, message.thinkingContent);
 			}
 		}
 		

@@ -450,6 +450,7 @@ export default class NovaPlugin extends Plugin {
 			claude: Object.assign({}, DEFAULT_SETTINGS.aiProviders.claude, savedData?.aiProviders?.claude || {}),
 			openai: Object.assign({}, DEFAULT_SETTINGS.aiProviders.openai, savedData?.aiProviders?.openai || {}),
 			google: Object.assign({}, DEFAULT_SETTINGS.aiProviders.google, savedData?.aiProviders?.google || {}),
+			deepseek: Object.assign({}, DEFAULT_SETTINGS.aiProviders.deepseek, savedData?.aiProviders?.deepseek || {}),
 			ollama: Object.assign({}, DEFAULT_SETTINGS.aiProviders.ollama, savedData?.aiProviders?.ollama || {}),
 			'openai-compatible': Object.assign({}, DEFAULT_SETTINGS.aiProviders['openai-compatible'], savedData?.aiProviders?.['openai-compatible'] || {})
 		};
@@ -488,6 +489,9 @@ export default class NovaPlugin extends Plugin {
 				}
 				if (this.settings.aiProviders.google?.apiKey) {
 					this.settings.aiProviders.google.apiKey = await CryptoService.decryptValue(this.settings.aiProviders.google.apiKey);
+				}
+				if (this.settings.aiProviders.deepseek?.apiKey) {
+					this.settings.aiProviders.deepseek.apiKey = await CryptoService.decryptValue(this.settings.aiProviders.deepseek.apiKey);
 				}
 				if (this.settings.aiProviders['openai-compatible']?.apiKey) {
 					this.settings.aiProviders['openai-compatible'].apiKey = await CryptoService.decryptValue(this.settings.aiProviders['openai-compatible'].apiKey);
@@ -552,6 +556,9 @@ export default class NovaPlugin extends Plugin {
 				}
 				if (settingsToSave.aiProviders.google?.apiKey) {
 					settingsToSave.aiProviders.google.apiKey = await CryptoService.encryptValue(settingsToSave.aiProviders.google.apiKey);
+				}
+				if (settingsToSave.aiProviders.deepseek?.apiKey) {
+					settingsToSave.aiProviders.deepseek.apiKey = await CryptoService.encryptValue(settingsToSave.aiProviders.deepseek.apiKey);
 				}
 				if (settingsToSave.aiProviders['openai-compatible']?.apiKey) {
 					settingsToSave.aiProviders['openai-compatible'].apiKey = await CryptoService.encryptValue(settingsToSave.aiProviders['openai-compatible'].apiKey);

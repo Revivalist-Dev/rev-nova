@@ -180,6 +180,9 @@ export interface ConversationMessage {
     /** Result of command execution */
     result?: EditResult;
     
+    /** Thinking/reasoning content extracted from AI response (shown in collapsible dropdown) */
+    thinkingContent?: string;
+    
     /** Message metadata for styling and source tracking */
     metadata?: {
         /** CSS class for styling */

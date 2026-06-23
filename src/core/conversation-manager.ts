@@ -217,19 +217,21 @@ export class ConversationManager {
      * Add an assistant response to the conversation
      */
     async addAssistantMessage(
-        file: TFile,
-        content: string,
-        result?: EditResult
+    	file: TFile,
+    	content: string,
+    	result?: EditResult,
+    	thinkingContent?: string
     ): Promise<ConversationMessage> {
-        const conversation = this.getConversation(file);
-        
-        const message: ConversationMessage = {
-            id: this.generateMessageId(),
-            role: 'assistant',
-            content,
-            timestamp: Date.now(),
-            result
-        };
+    	const conversation = this.getConversation(file);
+    	
+    	const message: ConversationMessage = {
+    		id: this.generateMessageId(),
+    		role: 'assistant',
+    		content,
+    		timestamp: Date.now(),
+    		result,
+    		thinkingContent
+    	};
 
         conversation.messages.push(message);
         conversation.lastUpdated = Date.now();

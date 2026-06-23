@@ -8,6 +8,7 @@ import { ClaudeProvider } from './providers/claude';
 import { OpenAIProvider } from './providers/openai';
 import { OpenAICompatibleProvider, isLocalOpenAICompatibleBaseUrl } from './providers/openai-compatible';
 import { GoogleProvider } from './providers/google';
+import { DeepSeekProvider } from './providers/deepseek';
 import { OllamaProvider } from './providers/ollama';
 import { NovaSettings } from '../settings';
 import { FeatureManager } from '../licensing/feature-manager';
@@ -33,6 +34,7 @@ export class AIProviderManager {
 		this.providers.set('openai', new OpenAIProvider(this.settings.aiProviders.openai, this.settings.general, this.timeoutManager));
 		this.providers.set('openai-compatible', new OpenAICompatibleProvider(this.settings.aiProviders['openai-compatible'], this.settings.general, this.timeoutManager));
 		this.providers.set('google', new GoogleProvider(this.settings.aiProviders.google, this.settings.general, this.timeoutManager));
+		this.providers.set('deepseek', new DeepSeekProvider(this.settings.aiProviders.deepseek, this.settings.general, this.timeoutManager));
 		this.providers.set('ollama', new OllamaProvider(this.settings.aiProviders.ollama, this.settings.general, this.timeoutManager));
 	}
 
@@ -239,12 +241,12 @@ export class AIProviderManager {
 	}
 
 	getAllowedProviders(): ProviderType[] {
-		const cloudProviders: ProviderType[] = ['claude', 'openai', 'google', 'openai-compatible'];
+		const cloudProviders: ProviderType[] = ['claude', 'openai', 'google', 'deepseek', 'openai-compatible'];
 
 		if (Platform.isMobile) {
 			const compatibleBaseUrl = this.settings.aiProviders['openai-compatible']?.baseUrl;
 			return isLocalOpenAICompatibleBaseUrl(compatibleBaseUrl)
-				? ['claude', 'openai', 'google']
+				? ['claude', 'openai', 'google', 'deepseek']
 				: cloudProviders;
 		}
 

@@ -52,11 +52,12 @@ export interface AIProviderSettings {
 	claude: ProviderConfig;
 	openai: ProviderConfig;
 	google: ProviderConfig;
+	deepseek: ProviderConfig;
 	ollama: ProviderConfig;
 	'openai-compatible': ProviderConfig;
 }
 
-export type ProviderType = 'claude' | 'openai' | 'google' | 'ollama' | 'openai-compatible' | 'none';
+export type ProviderType = 'claude' | 'openai' | 'google' | 'deepseek' | 'ollama' | 'openai-compatible' | 'none';
 
 export interface PlatformModelSettings {
 	selectedModel: string;

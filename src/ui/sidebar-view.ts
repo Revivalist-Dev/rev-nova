@@ -1260,26 +1260,26 @@ USER REQUEST: ${processedMessage}`;
 			}
 			loadingEl.remove();
 			
-			// Filter thinking content from response
-			const filteredResponse = response ? this.filterThinkingContent(response) : response;
+			// Extract thinking content from response (if any)
+			const { thinking, cleanContent } = response ? this.extractThinkingContent(response) : { thinking: null, cleanContent: response };
 			
-			// Store filtered response in conversation manager (if response exists)
-			if (activeFile && filteredResponse) {
-				await this.plugin.documentEngine.addAssistantMessage(filteredResponse);
+			// Store response with thinking content in conversation manager (if response exists)
+			if (activeFile && cleanContent) {
+				await this.plugin.conversationManager.addAssistantMessage(activeFile, cleanContent, undefined, thinking || undefined);
 			}
 			
-			// Add filtered AI response (only if there is a response)
-			if (filteredResponse) {
+			// Add AI response with thinking dropdown (only if there is a response)
+			if (cleanContent) {
 				// Check if response is an error message (contains x-circle icon or error keywords)
-				if (filteredResponse.includes('x-circle') || 
-					filteredResponse.includes('Error executing command') ||
-					filteredResponse.includes('Failed to') ||
-					filteredResponse.includes('No markdown file is open') ||
-					filteredResponse.includes('Unable to access') ||
-					filteredResponse.includes('Unable to set')) {
-					this.addErrorMessage(filteredResponse);
+				if (cleanContent.includes('x-circle') ||
+					cleanContent.includes('Error executing command') ||
+					cleanContent.includes('Failed to') ||
+					cleanContent.includes('No markdown file is open') ||
+					cleanContent.includes('Unable to access') ||
+					cleanContent.includes('Unable to set')) {
+					this.addErrorMessage(cleanContent);
 				} else {
-					this.chatRenderer.addMessage('assistant', filteredResponse);
+					this.chatRenderer.addMessage('assistant', cleanContent, thinking || undefined);
 				}
 			}
 		} catch (error) {
@@ -2060,13 +2060,45 @@ USER REQUEST: ${processedMessage}`;
 	}
 
 	/**
-	 * Filter thinking content from AI responses
+	 * Extract thinking content from AI responses
+	 * Returns the thinking/reasoning content (if any) and the clean response without thinking tags.
+	 * Handles both <think> (DeepSeek/Qwen3) and <thinking> (Claude) tags.
+	 */
+	private extractThinkingContent(content: string): { thinking: string | null; cleanContent: string } {
+		const thinkingRegex = /<think(?:ing)?\s*>([\s\S]*?)<\/think(?:ing)?>/gi;
+		const matches = content.match(thinkingRegex);
+		
+		if (!matches || matches.length === 0) {
+			return { thinking: null, cleanContent: content };
+		}
+		
+		// Extract thinking content (strip tags, join multiple blocks)
+		const thinkingParts: string[] = [];
+		let cleanContent = content;
+		
+		for (const match of matches) {
+			// Extract the inner content of the thinking tag
+			const innerMatch = match.match(/<think(?:ing)?\s*>([\s\S]*?)<\/think(?:ing)?>/i);
+			if (innerMatch && innerMatch[1]) {
+				thinkingParts.push(innerMatch[1].trim());
+			}
+			// Remove this thinking block from the clean content
+			cleanContent = cleanContent.replace(match, '');
+		}
+		
+		const thinking = thinkingParts.join('\n\n---\n\n').trim();
+		return {
+			thinking: thinking || null,
+			cleanContent: cleanContent.trim() || content.trim()
+		};
+	}
+
+	/**
+	 * Filter thinking content from AI responses (deprecated - use extractThinkingContent)
 	 * Removes content between <think>/<thinking> and </think>/<thinking> tags
 	 */
 	private filterThinkingContent(content: string): string {
-		// Remove thinking tags and their content (case-insensitive, multi-line)
-		// Handles both <think> (Qwen3) and <thinking> (Claude) tags
-		return content.replace(/<think(?:ing)?[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
+		return this.extractThinkingContent(content).cleanContent;
 	}
 
 	/**
@@ -2127,6 +2159,7 @@ USER REQUEST: ${processedMessage}`;
 		return provider === 'claude'
 			|| provider === 'openai'
 			|| provider === 'google'
+			|| provider === 'deepseek'
 			|| provider === 'ollama'
 			|| provider === 'openai-compatible';
 	}
@@ -2306,7 +2339,7 @@ USER REQUEST: ${processedMessage}`;
 		
 		// If not found in specified provider, search all providers
 		if (!model) {
-			const providerTypes = ['claude', 'openai', 'google', 'ollama', 'openai-compatible'];
+			const providerTypes = ['claude', 'openai', 'google', 'deepseek', 'ollama', 'openai-compatible'];
 			for (const searchProviderType of providerTypes) {
 				if (searchProviderType === providerType) continue; // Already checked
 				models = this.getAvailableModels(searchProviderType);
@@ -2338,6 +2371,11 @@ USER REQUEST: ${processedMessage}`;
 				: null;
 			if (providerConfig) {
 				providerConfig.model = modelValue;
+			}
+
+			// Update the provider manager with new settings
+			if (this.plugin.aiProviderManager) {
+				this.plugin.aiProviderManager.updateSettings(this.plugin.settings);
 			}
 
 			// Show success message immediately (optimistic update)
@@ -2519,6 +2557,19 @@ USER REQUEST: ${processedMessage}`;
 			}
 		}
 
+		// If a configurable provider was just connected and no provider is currently selected,
+		// auto-switch to the newly configured provider
+		if (status === 'connected' && this.isConfigurableProviderType(provider)) {
+			const currentProviderType = await this.plugin.aiProviderManager.getCurrentProviderType();
+			if (!currentProviderType) {
+				const models = this.getAvailableModels(provider);
+				if (models.length > 0) {
+					this.switchToModel(provider, models[0].value);
+					await this.plugin.saveSettings();
+				}
+			}
+		}
+
 		// Update provider dropdown display
 		try {
 			await this.refreshProviderDropdown();
@@ -2597,8 +2648,8 @@ USER REQUEST: ${processedMessage}`;
 		// Get provider availability status
 		const providerAvailability = await this.plugin.aiProviderManager.getAvailableProvidersWithStatus();
 		
-		// Provider priority order: Claude > OpenAI > OpenAI-compatible > Google > Ollama
-		const providerPriority: ProviderType[] = ['claude', 'openai', 'openai-compatible', 'google', 'ollama'];
+		// Provider priority order: Claude > OpenAI > DeepSeek > OpenAI-compatible > Google > Ollama
+		const providerPriority: ProviderType[] = ['claude', 'openai', 'deepseek', 'openai-compatible', 'google', 'ollama'];
 		
 		for (const providerType of providerPriority) {
 			if (providerType === 'none') continue; // Skip 'none' provider type

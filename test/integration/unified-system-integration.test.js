@@ -245,9 +245,9 @@ describe('Unified Message System Integration', () => {
 
         chatRenderer.loadConversationHistory({ path: 'test.md', name: 'test.md' });
 
-        // Check that regular messages go through addMessage
-        expect(chatRenderer.addMessage).toHaveBeenCalledWith('user', 'Hello Nova');
-        expect(chatRenderer.addMessage).toHaveBeenCalledWith('assistant', 'Hello! How can I help?');
+        // Check that regular messages go through addMessage (now with optional thinkingContent param)
+        expect(chatRenderer.addMessage).toHaveBeenCalledWith('user', 'Hello Nova', undefined);
+        expect(chatRenderer.addMessage).toHaveBeenCalledWith('assistant', 'Hello! How can I help?', undefined);
 
         // Check that status messages are restored with styling
         const statusMessages = chatContainer.querySelectorAll('.nova-message');

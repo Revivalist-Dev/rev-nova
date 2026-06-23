@@ -20,6 +20,7 @@ describe('Provider Dropdown Performance', () => {
 				claude: { apiKey: 'test-key', model: 'claude-3-5-sonnet-20241022' },
 				openai: { apiKey: 'test-key', model: 'gpt-4' },
 				google: { apiKey: 'test-key', model: 'gemini-pro' },
+				deepseek: { apiKey: 'test-key', model: 'deepseek-v4-flash' },
 				ollama: { baseUrl: 'http://localhost:11434', model: 'llama2' },
 				'openai-compatible': {
 					baseUrl: 'https://openrouter.ai/api/v1',

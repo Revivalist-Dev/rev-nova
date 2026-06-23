@@ -86,6 +86,18 @@ export class ProviderManager {
 			});
 		}
 		
+		// DeepSeek models
+		const deepseekModels = this.getProviderModels('deepseek');
+		if (deepseekModels.length > 0) {
+			const deepseekGroup = this.dropdown.selectEl.createEl('optgroup');
+			deepseekGroup.label = 'DeepSeek';
+			deepseekModels.forEach(model => {
+				const option = deepseekGroup.createEl('option');
+				option.value = `deepseek-${model.value}`;
+				option.textContent = model.label;
+			});
+		}
+		
 		// Ollama model (only on desktop, only if configured)
 		if (Platform.isDesktopApp) {
 			const ollamaModel = this.plugin.settings.aiProviders?.ollama?.model;
@@ -147,6 +159,8 @@ export class ProviderManager {
 				return settings.aiProviders?.openai?.model || null;
 			case 'google':
 				return settings.aiProviders?.google?.model || null;
+			case 'deepseek':
+				return settings.aiProviders?.deepseek?.model || null;
 			case 'ollama':
 				return settings.aiProviders?.ollama?.model || null;
 			default:
@@ -186,6 +200,11 @@ export class ProviderManager {
 				const googleModel = googleModels.find(m => m.value === selectedModelId);
 				return googleModel?.label || selectedModelId;
 			}
+			case 'deepseek': {
+				const deepseekModels = getAvailableModels('deepseek', settings);
+				const deepseekModel = deepseekModels.find(m => m.value === selectedModelId);
+				return deepseekModel?.label || selectedModelId;
+			}
 			case 'ollama': {
 				// Ollama uses different logic
 				const ollamaModel = settings.aiProviders?.ollama?.model;
@@ -204,6 +223,7 @@ export class ProviderManager {
 			'claude': 'var(--color-orange)',
 			'openai': 'var(--color-green)',
 			'google': 'var(--color-blue)',
+			'deepseek': 'var(--color-cyan)',
 			'ollama': 'var(--color-purple)',
 		};
 		return colors[providerType] || 'var(--text-success)';
@@ -234,6 +254,11 @@ export class ProviderManager {
 					case 'google':
 						if (this.plugin.settings.aiProviders.google) {
 							this.plugin.settings.aiProviders.google.model = model;
+						}
+						break;
+					case 'deepseek':
+						if (this.plugin.settings.aiProviders.deepseek) {
+							this.plugin.settings.aiProviders.deepseek.model = model;
 						}
 						break;
 					case 'ollama':

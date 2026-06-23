@@ -12,6 +12,7 @@ export const NOVA_SUPERNOVA_ICON = 'nova-supernova';
 export const PROVIDER_CLAUDE = 'claude';
 export const PROVIDER_OPENAI = 'openai';
 export const PROVIDER_GOOGLE = 'google';
+export const PROVIDER_DEEPSEEK = 'deepseek';
 export const PROVIDER_OLLAMA = 'ollama';
 
 export const CHATGPT_ALIAS = 'chatgpt';
